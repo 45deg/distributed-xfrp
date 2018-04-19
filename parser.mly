@@ -20,8 +20,9 @@ open Type
 %token EOF
 
 %start <xmodule> prog_module
-//%start <unit> repl
 
+%right prec_let
+%right prec_if
 %left OR2
 %left AND2
 %left OR
@@ -32,6 +33,7 @@ open Type
 %left LSHIFT RSHIFT
 %left PLUS MINUS
 %left ASTERISK SLASH PERCENT
+%right prec_uni
 
 %%
 
@@ -71,7 +73,7 @@ expr:
   | id = ID AT a = annotation { EAnnot(id, a) }
   | id = ID LPAREN args = args RPAREN { EApp(id, args) }
   | expr binop expr { EBin($2, $1, $3) }
-  | uniop expr { EUni($1, $2) }
+  | uniop expr %prec prec_uni { EUni($1, $2) }
   | LPAREN xs = args RPAREN 
     { match xs with
         | []   -> EConst(CUnit)
@@ -79,8 +81,10 @@ expr:
         | _    -> ETuple(xs)
     }
   | IF c = expr THEN a = expr ELSE b = expr
+    %prec prec_if
     { EIf(c, a, b) }
   | LET bs = separated_nonempty_list(SEMICOLON, binder) IN e = expr
+    %prec prec_let
     { ELet(bs, e) }
   | CASE e = expr OF bs = nonempty_list(case_body)
     { ECase(e, bs) }
