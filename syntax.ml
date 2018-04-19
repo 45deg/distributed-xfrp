@@ -2,17 +2,6 @@ type id = string
 type moduleid = string
 
 type id_and_type = id * Type.t
-type fundef = {
-  name: id;
-  args: id_and_type list;
-  t: Type.t;
-  body: expr
-}
-
-type definition
-  = Const of id_and_type * expr
-  | Node of id_and_type * expr option * expr
-  | Fun of fundef
 
 type const 
   = CUnit
@@ -54,8 +43,20 @@ type expr
   | EUni of uniop * expr
   | ETuple of expr list
   | EIf of expr * expr * expr
-  | ELet of (id * expr * Type.t) list * (Expr a)
-  | ECase of (pattern * expr) list
+  | ELet of (id * expr * Type.t) list * expr
+  | ECase of expr * (pattern * expr) list
+
+type fundef = {
+  name: id;
+  args: id_and_type list;
+  t: Type.t;
+  body: expr
+}
+
+type definition
+  = Const of id_and_type * expr
+  | Node of id_and_type * expr option * expr
+  | Fun of fundef
 
 type xmodule
   = {
