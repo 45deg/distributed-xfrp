@@ -1,6 +1,5 @@
 type t = 
-    TNone
-  | TUnit
+    TUnit
   | TBool
   | TChar
   | TInt

@@ -62,7 +62,7 @@ definition:
       name = id;
       args = a;
       t = (match t_opt with
-            | None -> TNone
+            | None -> TVar(ref None)
             | Some(t) -> t);
       body = e 
     }) }
@@ -141,7 +141,7 @@ id_and_type_opt:
   | i = ID COLON t = type_spec
     { (i, t) }
   | i = ID
-    { (i, TNone) }
+    { (i, TVar(ref None)) }
 
 type_spec:
   | t = prim_type_spec
@@ -157,7 +157,7 @@ prim_type_spec:
       | "Char"  -> TChar
       | "Int"   -> TInt
       | "Float" -> TFloat
-      | _ -> TNone }
+      | _ -> TVar(ref None) }
 
 binder:
   | it = id_and_type_opt EQUAL e = expr
