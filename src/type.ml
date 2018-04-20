@@ -8,3 +8,4 @@ type t =
   | TTuple of t list
   | TFun of t list * t
   | TVar of t option ref
+[@@deriving show]

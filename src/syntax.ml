@@ -1,7 +1,10 @@
 type id = string
+[@@deriving show]
 type moduleid = string
+[@@deriving show]
 
 type id_and_type = id * Type.t
+[@@deriving show]
 
 type const 
   = CUnit
@@ -9,12 +12,15 @@ type const
   | CChar of char
   | CInt of int
   | CFloat of float
+[@@deriving show]
 
 type annot
   = ALast
+[@@deriving show]
 
 type uniop
   = UNot | UNeg | UInv
+[@@deriving show]
 
 type binop 
   = BMul | BDiv | BMod
@@ -27,12 +33,14 @@ type binop
   | BOr
   | BLAnd
   | BLOr
+[@@deriving show]
 
 type pattern
   = PWild
   | PConst of const
   | PVar of id
   | PTuple of pattern list
+[@@deriving show]
 
 type expr 
   = EConst of const
@@ -45,6 +53,7 @@ type expr
   | EIf of expr * expr * expr
   | ELet of (id * expr * Type.t) list * expr
   | ECase of expr * (pattern * expr) list
+[@@deriving show]
 
 type fundef = {
   name: id;
@@ -52,11 +61,13 @@ type fundef = {
   t: Type.t;
   body: expr
 }
+[@@deriving show]
 
 type definition
   = Const of id_and_type * expr
   | Node of id_and_type * expr option * expr
   | Fun of fundef
+[@@deriving show]
 
 type xmodule
   = {
@@ -66,3 +77,4 @@ type xmodule
     use: moduleid list;
     definition: definition list
   }
+[@@deriving show]
