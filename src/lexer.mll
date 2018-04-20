@@ -1,7 +1,7 @@
 {
 open Parser
 open Lexing
-exception SyntaxError of string
+exception Error of string
 
 let lexicon : (string, token) Hashtbl.t = Hashtbl.create 17
 
@@ -98,7 +98,7 @@ rule read = parse
   | fdigits          { FLOAT (float_of_string (Lexing.lexeme lexbuf)) }
   | digits           { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | eof              { EOF }
-  | _                { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+  | _                { raise (Error ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
 and read_comment = parse
   | '\n'             { new_line lexbuf }
   | eof              { () }

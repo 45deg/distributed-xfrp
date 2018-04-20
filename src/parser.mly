@@ -19,7 +19,7 @@ open Type
 %token <int> INT 
 %token EOF
 
-%start <xmodule> prog_module
+%start <Syntax.xmodule> prog_module
 
 %right prec_let
 %right prec_if
