@@ -57,7 +57,6 @@ rule read = parse
   | ','              { COMMA }
   | '['              { LBRACKET }
   | ']'              { RBRACKET }
-  | "()"             { UNIT }
   | '('              { LPAREN }
   | ')'              { RPAREN }
   | ':'              { COLON }
