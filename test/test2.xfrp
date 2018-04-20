@@ -1,0 +1,23 @@
+module FanController # module name
+in  tmp : Float,     # temperature sensor
+    hmd : Float,     # humidity sensor
+    pulse10ms : Bool # 10 ms interval timer
+out fan : Bool,      # fan switch
+    led : Bool       # LED
+use Std              # standard library
+
+# discomfort (temperature-humidity) index
+node di =
+    0.81 * tmp + 0.01 * hmd * (0.99 * tmp - 14.3) + 46.3
+
+# 1 minute timer
+node init[0] timer =
+    if !pulse10ms@last && pulse10ms     # detect rising edge
+    then (timer@last + 1) % 6000 else timer@last
+
+# fan switch
+node fan = if timer@last != timer && timer == 0
+           then di >= 75.0 else fan@last
+
+# LED blinks at 1Hz
+node led = (timer % 100) < 50

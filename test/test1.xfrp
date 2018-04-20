@@ -1,0 +1,15 @@
+module FanController  # module name
+in  tmp : Float,      # temperature sensor
+    hmd : Float       # humidity sensor
+out fan : Bool        # fan switch
+use Std               # standard library
+
+# discomfort (temperature-humidity) index
+node di =
+    0.81 * tmp + 0.01 * hmd * (0.99 * tmp - 14.3) + 46.3
+
+# fan switch
+node init[False] fan = di >= 75.0 + ho
+
+# hysteresis offset
+node ho = if fan@last then -0.5 else 0.5
