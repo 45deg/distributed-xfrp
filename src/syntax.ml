@@ -6,6 +6,9 @@ type moduleid = string
 type id_and_type = id * Type.t
 [@@deriving show]
 
+type id_and_type_opt = id * Type.t option
+[@@deriving show]
+
 type const 
   = CUnit
   | CBool of bool
@@ -51,21 +54,21 @@ type expr
   | EUni of uniop * expr
   | ETuple of expr list
   | EIf of expr * expr * expr
-  | ELet of (id * expr * Type.t) list * expr
+  | ELet of (id * expr * Type.t option) list * expr
   | ECase of expr * (pattern * expr) list
 [@@deriving show]
 
 type fundef = {
   name: id;
-  args: id_and_type list;
-  t: Type.t;
+  args: id_and_type_opt list;
+  t: Type.t option;
   body: expr
 }
 [@@deriving show]
 
 type definition
-  = Const of id_and_type * expr
-  | Node of id_and_type * expr option * expr
+  = Const of id_and_type_opt * expr
+  | Node of id_and_type_opt * expr option * expr
   | Fun of fundef
 [@@deriving show]
 

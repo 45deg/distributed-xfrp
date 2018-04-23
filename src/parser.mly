@@ -61,9 +61,7 @@ definition:
     { Fun({
       name = id;
       args = a;
-      t = (match t_opt with
-            | None -> TVar(ref None)
-            | Some(t) -> t);
+      t = t_opt;
       body = e 
     }) }
 
@@ -138,9 +136,9 @@ id_and_type:
 
 id_and_type_opt:
   | i = ID COLON t = type_spec
-    { (i, t) }
+    { (i, Some t) }
   | i = ID
-    { (i, TVar(ref None)) }
+    { (i, None) }
 
 type_spec:
   | t = prim_type_spec
@@ -156,7 +154,7 @@ prim_type_spec:
       | "Char"  -> TChar
       | "Int"   -> TInt
       | "Float" -> TFloat
-      | _ -> TVar(ref None) }
+      | _ -> assert false }
 
 binder:
   | it = id_and_type_opt EQUAL e = expr
