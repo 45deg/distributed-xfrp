@@ -1,13 +1,9 @@
 type id = string
-[@@deriving show]
 type moduleid = string
-[@@deriving show]
 
 type id_and_type = id * Type.t
-[@@deriving show]
 
 type id_and_type_opt = id * Type.t option
-[@@deriving show]
 
 type const 
   = CUnit
@@ -15,15 +11,12 @@ type const
   | CChar of char
   | CInt of int
   | CFloat of float
-[@@deriving show]
 
 type annot
   = ALast
-[@@deriving show]
 
 type uniop
   = UNot | UNeg | UInv
-[@@deriving show]
 
 type binop 
   = BMul | BDiv | BMod
@@ -36,14 +29,12 @@ type binop
   | BOr
   | BLAnd
   | BLOr
-[@@deriving show]
 
 type pattern
   = PWild
   | PConst of const
   | PVar of id
   | PTuple of pattern list
-[@@deriving show]
 
 type expr 
   = EConst of const
@@ -56,21 +47,12 @@ type expr
   | EIf of expr * expr * expr
   | ELet of (id * expr * Type.t option) list * expr
   | ECase of expr * (pattern * expr) list
-[@@deriving show]
-
-type fundef = {
-  name: id;
-  args: id_and_type_opt list;
-  t: Type.t option;
-  body: expr
-}
-[@@deriving show]
+  | EFun of id list * expr
 
 type definition
   = Const of id_and_type_opt * expr
   | Node of id_and_type_opt * expr option * expr
-  | Fun of fundef
-[@@deriving show]
+  | Fun of (id * (Type.t option list * Type.t option)) * expr
 
 type xmodule
   = {
@@ -80,4 +62,57 @@ type xmodule
     use: moduleid list;
     definition: definition list
   }
-[@@deriving show]
+
+let rec string_of_expr = function
+  | EConst CUnit -> "()"
+  | EConst (CBool b) -> string_of_bool b
+  | EConst (CInt i)  -> string_of_int i
+  | EConst (CFloat f)  -> string_of_float f
+  | EConst (CChar c) -> String.make 1 c
+  | EId id -> id
+  | EAnnot (id, ALast) -> id ^ "@last"
+  | EApp (id, es) -> id ^ "(" ^ String.concat "," (List.map string_of_expr es) ^ ")"
+  | EBin (op, e1, e2) -> string_of_expr e1 ^ " " ^ (match op with
+      | BMul -> "*"  | BDiv -> "/"   | BMod -> "%"
+      | BAdd -> "+"  | BSub -> "-"   | BShL -> ">>"
+      | BShR -> "<<" | BLt -> "<"    | BLte -> "<="
+      | BGt -> ">"   | BGte -> ">="  | BEq -> "=="
+      | BNe -> "!="  | BAnd -> "&"   | BXor -> "^"
+      | BOr -> "|"   | BLAnd -> "&&" | BLOr -> "||" ) ^ " " ^ string_of_expr e2
+  | EUni (op, e) -> (match op with 
+    | UNot -> "!" 
+    | UNeg -> "-" 
+    | UInv -> "~") ^ string_of_expr e
+  | ELet (binders, e) ->
+    "let " ^ String.concat ", "
+              (List.map (fun (i,e,_) -> i ^ " = " ^ string_of_expr e) binders)
+    ^ " in " ^ string_of_expr e
+  | EIf(c, a, b) ->
+    "if " ^ string_of_expr c ^ " then " ^ string_of_expr a ^ " else " ^ string_of_expr b
+  | ETuple es ->
+    "(" ^ String.concat "," (List.map string_of_expr es) ^ ")"
+  | EFun (args, e) ->
+    "fun (" ^ String.concat ", " args ^ ") -> " ^ string_of_expr e
+  | ECase(e, list) -> "[NOT IMPLEMENTED]"
+
+
+let string_of_definition = function
+  | Const ((i, _), e) -> "const " ^ i ^ " = " ^ string_of_expr e
+  | Node ((i, _), _, e) -> "node " ^ i ^ " = " ^ string_of_expr e
+  | Fun ((i, _), EFun(args, e)) -> "function " ^ i ^ "(" ^ String.concat "," args ^ ") = " ^ string_of_expr e
+  | Fun ((_, _), _) -> assert false
+
+let pp_module = function
+  | {
+    id = id;
+    in_node = ins;
+    out_node = outs;
+    use = mods;
+    definition = defs;
+  } -> 
+    Printf.printf "MODULE: %s\nIN: %s\nOUT: %s\nUSE: %s\nDEFS:\n%s\n"
+      id
+      (List.map fst ins |> String.concat ",")
+      (List.map fst outs |> String.concat ",")
+      (String.concat "," mods)
+      (List.map string_of_definition defs |> String.concat "\n")

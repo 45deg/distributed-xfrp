@@ -58,12 +58,7 @@ definition:
   | NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
     { Node(it, init, e) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
-    { Fun({
-      name = id;
-      args = a;
-      t = t_opt;
-      body = e 
-    }) }
+    { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
 
 expr:
   | constant { EConst($1) }

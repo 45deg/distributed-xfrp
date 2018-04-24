@@ -3,25 +3,6 @@ open Syntax
 
 exception TypeError of string
 
-module Env = struct 
-  module M = Map.Make (struct
-                      type t = Syntax.id
-                      let compare = compare
-                    end)
-  type env = Type.t M.t
-  let empty: env = M.empty
-  let extend env id ty = M.add id ty env
-  let extend_all env ids tys = List.fold_left2 extend env ids tys 
-  let lookup env id = 
-    try Some(M.find id env)
-    with | Not_found -> None
-  let rec string_of_env env = 
-    M.bindings env 
-    |> List.map (fun (a, b) -> "(" ^ a ^ ", " ^ string_of_type b ^ ")")
-    |> String.concat ","
-    |> fun s -> "{" ^ s ^ "}"
-end
-
 let rec adjust_level id level = function
   | TVar {contents = TVBound ty}
     -> adjust_level id level ty
@@ -168,16 +149,14 @@ let rec infer env level e =
     let a_t = infer env level a in
     let b_t = infer env level b in
     unify a_t b_t; a_t
-(*
-  | Fun(args, body) ->
+  | EFun(args, body) ->
       let args_t = gen_var_list level (List.length args) in
       let fn_env = List.fold_left2 Env.extend env args args_t in
       let ret_t = infer fn_env level body in
       TFun(args_t, ret_t)
-*)
   | ECase(m, bodies) -> assert false
   in 
   let fe = f e in 
     print_endline ("INFER " ^ Env.string_of_env env ^
-                   " (" ^ string_of_int level ^ "," ^ show_expr e ^ ") |- " ^ string_of_type fe);
+                   " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
     fe
