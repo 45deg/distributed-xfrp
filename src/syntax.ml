@@ -49,19 +49,23 @@ type expr
   | ECase of expr * (pattern * expr) list
   | EFun of id list * expr
 
-type definition
-  = Const of id_and_type_opt * expr
-  | Node of id_and_type_opt * expr option * expr
-  | Fun of (id * (Type.t option list * Type.t option)) * expr
+type 
+  const_t = id_and_type_opt * expr
+  and node_t = id_and_type_opt * expr option * expr
+  and fundef_t = (id * (Type.t option list * Type.t option)) * expr
+and def_record = {
+  const: const_t list;
+  func: fundef_t list;
+  node: node_t list
+}
 
-type xmodule
-  = {
-    id: moduleid;
-    in_node: id_and_type list;
-    out_node: id_and_type list;
-    use: moduleid list;
-    definition: definition list
-  }
+type xmodule = {
+  id: moduleid;
+  in_node: id_and_type list;
+  out_node: id_and_type list;
+  use: moduleid list;
+  definition: def_record;
+}
 
 let rec string_of_expr = function
   | EConst CUnit -> "()"
@@ -95,12 +99,17 @@ let rec string_of_expr = function
     "fun (" ^ String.concat ", " args ^ ") -> " ^ string_of_expr e
   | ECase(e, list) -> "[NOT IMPLEMENTED]"
 
-
-let string_of_definition = function
-  | Const ((i, _), e) -> "const " ^ i ^ " = " ^ string_of_expr e
-  | Node ((i, _), _, e) -> "node " ^ i ^ " = " ^ string_of_expr e
-  | Fun ((i, _), EFun(args, e)) -> "function " ^ i ^ "(" ^ String.concat "," args ^ ") = " ^ string_of_expr e
-  | Fun ((_, _), _) -> assert false
+let string_of_definition { const = c; func = f; node = n } = 
+  let open Type in
+  let str_ty = function | Some (t) -> string_of_type t
+                        | None -> "?" in
+  let cs ((i,t),e) = Printf.sprintf "const %s : %s = %s" i (str_ty t) (string_of_expr e) in
+  let fs ((i,(at,rt)),e) = 
+    Printf.sprintf "function %s(%s): %s = %s" i (List.map str_ty at |> String.concat ",") 
+                                                (str_ty rt) (string_of_expr e) in
+  let ns ((i,t), init, e) =
+    Printf.sprintf "node %s = %s" i (string_of_expr e) in
+  String.concat "\n" ((List.map cs c) @ (List.map fs f) @ (List.map ns n))
 
 let pp_module = function
   | {
@@ -115,4 +124,4 @@ let pp_module = function
       (List.map fst ins |> String.concat ",")
       (List.map fst outs |> String.concat ",")
       (String.concat "," mods)
-      (List.map string_of_definition defs |> String.concat "\n")
+      (string_of_definition defs)
