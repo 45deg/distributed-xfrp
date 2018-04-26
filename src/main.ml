@@ -7,8 +7,8 @@ let () =
   let filebuf = from_channel input in
   try
     let main = Parser.prog_module Lexer.read filebuf in
-    Syntax.pp_module main
-    (*print_endline (Type.string_of_type (Typing.infer (Inter.gen_env main) 0 (Inter.to_let main)))*)
+    Syntax.pp_module main;
+    print_endline (Env.string_of_env (Typing.type_module main))
   with
   | Lexer.Error msg ->
       Printf.eprintf "%s" msg

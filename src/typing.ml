@@ -106,6 +106,7 @@ let split3 list =
       f rest (x :: xs, y :: ys, z :: zs)
   in f list ([], [], [])
 
+
 let rec infer env level e = 
   let f = function
   | EConst(c) ->
@@ -139,7 +140,10 @@ let rec infer env level e =
   | EBin(b, e1, e2) ->
     let t1 = infer env level e1 in
     let t2 = infer env level e2 in
-    unify t1 t2; t1
+    unify t1 t2; 
+    (match b with
+      | BLt | BLte | BGt | BGte | BEq | BLAnd | BLOr -> TBool
+      | _ -> t1)
   | EUni(o, e) ->
     infer env level e
   | ETuple(es) ->
@@ -160,3 +164,29 @@ let rec infer env level e =
     print_endline ("INFER " ^ Env.string_of_env env ^
                    " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
     fe
+
+let infer_defs level defs env =
+  let default = function 
+  | Some(t) -> t
+  | None    -> gen_var level in
+  let rec collect (is, ts, es) = function 
+  | [] -> (is, ts, es)
+  | (Const ((i, t), e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
+  | (Node ((i, t), _, e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
+  | (Fun ((i, (at, rt)), e)) :: xs -> 
+    let t = TFun(List.map default at, default rt) in
+    collect (i :: is, t :: ts, e :: es) xs
+  in
+  let (ids, annots, exprs) = collect ([], [], []) defs in
+  let exprs_t = List.map (infer env (level + 1)) exprs in
+  List.iter2 unify exprs_t annots;
+  let gen_ts = List.map (generalize level) exprs_t in
+  Env.extend_all env ids gen_ts
+
+let type_module ({ definition = defs; in_node = i; out_node = o; _ }) = 
+  let env = List.fold_left (fun m (i, t) -> Env.extend m i t) Env.empty (i @ o) in
+  let { const = c; func = f; node = n } = defs in
+  env |>
+  infer_defs 0 c |>
+  infer_defs 1 f |>
+  infer_defs 2 n
