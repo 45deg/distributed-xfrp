@@ -119,7 +119,8 @@ let rec infer env level e =
   | EId(id) | EAnnot(id, _) ->
     (match (Env.lookup env id) with
     | Some(t) -> instantiate level t
-    | None    -> gen_var level)
+    (*| None    -> gen_var level)*)
+    | None -> raise (TypeError("unknown variable: " ^ id)))
   | ELet(binds, body) ->
     let (ids, es, tanots) = split3 binds in
     let var_ts = List.map (infer env (level + 1)) es in
