@@ -12,7 +12,7 @@ let () =
     print_endline "==========================";
     print_endline (Env.string_of_env (Typing.type_module main));
     print_endline "==========================";
-    print_endline (Dependency.string_of_graph (Dependency.get_graph main))
+    print_endline (Erlang.of_xmodule main)
   with
   | Lexer.Error msg ->
       Printf.eprintf "%s" msg
