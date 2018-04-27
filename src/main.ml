@@ -11,6 +11,8 @@ let () =
     Syntax.pp_module main;
     print_endline "==========================";
     print_endline (Env.string_of_env (Typing.type_module main));
+    print_endline "==========================";
+    print_endline (Dependency.string_of_graph (Dependency.get_graph main))
   with
   | Lexer.Error msg ->
       Printf.eprintf "%s" msg
