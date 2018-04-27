@@ -53,18 +53,13 @@ type definition
   = Const of id_and_type_opt * expr
   | Node of id_and_type_opt * expr option * expr
   | Fun of (id * (Type.t option list * Type.t option)) * expr
-and def_record = {
-  const: definition list;
-  func: definition list;
-  node: definition list
-}
 
 type xmodule = {
   id: moduleid;
   in_node: id_and_type list;
   out_node: id_and_type list;
   use: moduleid list;
-  definition: def_record;
+  definition: definition list;
 }
 
 let rec string_of_expr = function
@@ -99,18 +94,18 @@ let rec string_of_expr = function
     "fun (" ^ String.concat ", " args ^ ") -> " ^ string_of_expr e
   | ECase(e, list) -> "[NOT IMPLEMENTED]"
 
-[@@@ocaml.warning "-8"]
-let string_of_definition { const = c; func = f; node = n } = 
+let string_of_definition defs = 
   let open Type in
   let str_ty = function | Some (t) -> string_of_type t
                         | None -> "?" in
-  let cs (Const((i,t),e)) = Printf.sprintf "const %s : %s = %s" i (str_ty t) (string_of_expr e) in
-  let fs (Fun((i,(at,rt)),EFun(ai, e))) = 
-    Printf.sprintf "function %s(%s): %s = %s" i (List.map2 (fun i t -> i ^ ":" ^ str_ty t) ai at |> String.concat ",") 
-                                                (str_ty rt) (string_of_expr e) in
-  let ns (Node((i,t), init, e)) =
-    Printf.sprintf "node %s = %s" i (string_of_expr e) in
-  String.concat "\n" ((List.map cs c) @ (List.map fs f) @ (List.map ns n))
+  let str_def = function
+    | Const((i,t),e) -> Printf.sprintf "const %s : %s = %s" i (str_ty t) (string_of_expr e)
+    | Fun((i,(at,rt)),EFun(ai, e)) ->
+      Printf.sprintf "function %s(%s): %s = %s" i (List.map2 (fun i t -> i ^ ":" ^ str_ty t) ai at |> String.concat ",") 
+                                                (str_ty rt) (string_of_expr e)
+    | Fun(_,_) -> assert false
+    | Node((i,t), init, e) -> Printf.sprintf "node %s = %s" i (string_of_expr e) in
+  String.concat "\n" (List.map str_def defs)
 
 let pp_module = function
   | {
