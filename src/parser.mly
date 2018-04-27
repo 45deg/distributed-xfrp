@@ -1,17 +1,6 @@
 %{
 open Syntax
 open Type
-
-
-let collect_defs defs = 
-  List.fold_right
-  (fun d ({ const = c; func = f; node = n } as r) -> match d with
-  | Const _ -> { r with const = d :: c }
-  | Fun _ -> { r with func = d :: f }
-  | Node _ -> { r with node = d :: n })
-  defs
-  { const = []; func = []; node = [] }
-
 %}
 
 %token
@@ -60,7 +49,7 @@ prog_module:
       in_node = innodes;
       out_node = outnodes;
       use = modules;
-      definition = collect_defs defs
+      definition = defs
     } }
 
 definition:
