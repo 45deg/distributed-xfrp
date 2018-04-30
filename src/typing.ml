@@ -106,7 +106,6 @@ let split3 list =
       f rest (x :: xs, y :: ys, z :: zs)
   in f list ([], [], [])
 
-
 let rec infer env level e = 
   let f = function
   | EConst(c) ->
@@ -166,6 +165,19 @@ let rec infer env level e =
                    " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
     fe
 
+let rec is_concrete = function
+  | TVar {contents = TVBound ty}
+    -> is_concrete ty
+  | TVar {contents = TVGeneric _}
+  | TVar ({contents = TVFree(_,_)})
+    -> false
+  | TFun(args, ret)
+    (*-> List.for_all is_concrete args && is_concrete ret*)
+    -> true (* ignore function type *)
+  | TTuple(ts)
+    -> List.for_all is_concrete ts
+  | _ -> true
+
 let type_module ({ definition = defs; in_node = i; out_node = o; _ }) = 
   let default = function 
   | Some(t) -> t
@@ -184,4 +196,7 @@ let type_module ({ definition = defs; in_node = i; out_node = o; _ }) =
   let exprs_t = List.map (infer env 1) exprs in
   List.iter2 unify exprs_t annots;
   let gen_ts = List.map (generalize 0) exprs_t in
-  TypeInfo.extend_all env ids gen_ts
+  let result = TypeInfo.extend_all env ids gen_ts in
+  if TypeInfo.for_all (fun _ t -> is_concrete t) result
+    then result
+    else raise (TypeError("Generic types remain: " ^ TypeInfo.string_of_ti env))

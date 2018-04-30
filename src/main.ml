@@ -13,7 +13,7 @@ let () =
     print_endline "==========================";
     print_endline (TypeInfo.string_of_ti ti);
     print_endline "==========================";
-    print_endline (Codegen.of_xmodule main)
+    print_endline (Codegen.of_xmodule main ti)
   with
   | Lexer.Error msg ->
       Printf.eprintf "%s" msg

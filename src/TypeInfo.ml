@@ -6,6 +6,8 @@ type ti = Type.t M.t
 let empty: ti = M.empty
 let extend ti id ty = M.add id ty ti
 let extend_all ti ids tys = List.fold_left2 extend ti ids tys 
+let for_all = M.for_all
+let find = M.find
 let lookup ti id = 
   try Some(M.find id ti)
   with | Not_found -> None

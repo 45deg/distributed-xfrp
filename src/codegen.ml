@@ -1,6 +1,9 @@
 open Syntax
 open Dependency
 
+module S = Set.Make(String);;
+module M = Map.Make(String);;
+
 let var s = "V" ^ s
 let sig_var s = "S" ^ s
 let last_sig_var s = "LS" ^ s
@@ -9,31 +12,6 @@ let at_last var = if var.[0] == 'S' then "L" ^ var else var
 let const s = String.uppercase_ascii s
 
 exception NotImplemented
-
-let main deps xmod = 
-  let nodes = M.bindings deps |> List.map fst in
-  let spawn = List.map (fun n ->
-    if List.exists (fun (i, _) -> i == n) xmod.in_node then (* refactor needed *)
-      "\tregister(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
-    else
-      let ins = S.elements (M.find n deps).ins in
-      let nulls = List.map (fun _ -> "null") ins |> String.concat "," in
-      "\tregister(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [null, {" ^ nulls ^ "}])),\n"
-  ) nodes |> String.concat "" in
-  "main() -> \n" ^
-  spawn ^
-  "\tin()."
-
-let in_node deps (id, _) = 
-  id ^ "() ->\n" ^ 
-  String.concat "\n" (List.map (fun s -> "\t" ^ s) [
-  "receive";
-  "Value ->";
-    S.elements ((M.find id deps).outs) |>
-    List.map (fun s -> "\t" ^ s ^ " ! {" ^ id ^ ", Value}") |>
-    String.concat ";\n";
-  "\tend,";
-  id ^ "()."])
 
 let erlang_of_expr env e = 
   let rec f env = function
@@ -70,6 +48,32 @@ let erlang_of_expr env e =
     | ECase(e, list) -> raise NotImplemented
   in f env e
 
+let main deps xmod inits env = 
+  let nodes = M.bindings deps |> List.map fst in
+  let spawn = List.map (fun n ->
+    if List.exists (fun (i, _) -> i == n) xmod.in_node then (* refactor needed *)
+      "\tregister(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
+    else
+      let init i = M.find i inits |> erlang_of_expr env in
+      let ins = S.elements (M.find n deps).ins in
+      "\tregister(" ^ n ^ ", " ^
+      "spawn(?MODULE, " ^ n ^ ", [" ^ init n ^", {" ^ String.concat "," (List.map init ins) ^ "}])),\n"
+  ) nodes |> String.concat "" in
+  "main() -> \n" ^
+  spawn ^
+  "\tin()."
+
+let in_node deps (id, _) = 
+  id ^ "() ->\n" ^ 
+  String.concat "\n" (List.map (fun s -> "\t" ^ s) [
+  "receive";
+  "Value ->";
+    S.elements ((M.find id deps).outs) |>
+    List.map (fun s -> "\t" ^ s ^ " ! {" ^ id ^ ", Value}") |>
+    String.concat ";\n";
+  "\tend,";
+  id ^ "()."])
+
 let def_node deps env = function
   | Node ((id, _), init, expr) ->
     let dep = M.find id deps in
@@ -92,8 +96,24 @@ let def_node deps env = function
   | Fun ((id, _), e) ->
     id ^ erlang_of_expr e ^ "."*)
 
-let of_xmodule x = 
-  let dep = get_graph x in
+let init_values x ti =
+  let of_type = let open Type in function
+    | TUnit -> EConst(CUnit)
+    | TBool -> EConst(CBool(false))
+    | TInt  -> EConst(CInt(0))
+    | TFloat -> EConst(CFloat(0.0))
+    | TChar -> EConst(CBool(false))
+    | _ -> assert false in
+  let collect m = function 
+    | Node((i, _), Some(init), _) -> M.add i init m
+    | Node((i, _), None, _) -> M.add i (of_type (TypeInfo.find i ti)) m
+    | _ -> m
+  in
+  let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (TypeInfo.find i ti)) m) M.empty x.in_node in
+  List.fold_left collect ins x.definition
+ 
+let of_xmodule x ti = 
+  let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
      List.map (fun (i,_) -> (i, 0)) x.in_node;
@@ -113,7 +133,7 @@ let of_xmodule x =
       (List.map (fun l -> "-export([" ^ 
         String.concat "," (List.map (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
        ^ "]).") attributes);
-    main dep x;
+    main dep x (init_values x ti) env;
     (* infunc *)
     "in() -> \n" ^
     "\t%fill here\n" ^
