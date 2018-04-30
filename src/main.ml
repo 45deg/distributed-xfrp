@@ -12,7 +12,7 @@ let () =
     print_endline "==========================";
     print_endline (Env.string_of_env (Typing.type_module main));
     print_endline "==========================";
-    print_endline (Erlang.of_xmodule main)
+    print_endline (Codegen.of_xmodule main)
   with
   | Lexer.Error msg ->
       Printf.eprintf "%s" msg
