@@ -4,14 +4,17 @@ open Dependency
 module S = Set.Make(String);;
 module M = Map.Make(String);;
 
+exception NotImplemented
+
 let var s = "V" ^ s
 let sig_var s = "S" ^ s
 let last_sig_var s = "LS" ^ s
 let at_last var = if var.[0] == 'S' then "L" ^ var else var
 
-let const s = String.uppercase_ascii s
+let concat_map s f l = String.concat s (List.map f l)
+let indent n s = String.make n '\t' ^ s
 
-exception NotImplemented
+let const s = String.uppercase_ascii s
 
 let erlang_of_expr env e = 
   let rec f env = function
@@ -23,7 +26,7 @@ let erlang_of_expr env e =
     | EId id -> M.find id env
     | EAnnot (id, ALast) -> at_last (M.find id env)
     | EApp (id, es) -> (* workaround *)
-      id ^ "(" ^ String.concat "," (List.map (f env) es) ^ ")"
+      id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
         | BMul -> " * "   | BDiv -> " / "        | BMod -> " rem "
         | BAdd -> " + "   | BSub -> " - "        | BShL -> " bsl "
@@ -42,59 +45,62 @@ let erlang_of_expr env e =
     | EIf(c, a, b) -> 
       "(case " ^ f env c ^ " of true -> " ^ f env a ^ "; false -> " ^ f env b ^ " end)"
     | ETuple es ->
-      "{" ^ String.concat "," (List.map (f env) es) ^ "}"
+      "{" ^ (concat_map "," (f env) es) ^ "}"
     | EFun (args, e) ->
-      "(" ^ String.concat ", " args ^ ") -> \n" ^ f env e
+      let newenv = List.fold_left (fun env i -> M.add i (var i) env) env args in
+      "(" ^ concat_map "," var args ^ ") -> " ^ f newenv e
     | ECase(e, list) -> raise NotImplemented
   in f env e
 
 let main deps xmod inits env = 
   let nodes = M.bindings deps |> List.map fst in
-  let spawn = List.map (fun n ->
+  let spawn = concat_map "" (fun n ->
     if List.exists (fun (i, _) -> i == n) xmod.in_node then (* refactor needed *)
-      "\tregister(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
+      indent 1 "register(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
     else
       let init i = M.find i inits |> erlang_of_expr env in
       let ins = S.elements (M.find n deps).ins in
-      "\tregister(" ^ n ^ ", " ^
-      "spawn(?MODULE, " ^ n ^ ", [" ^ init n ^", {" ^ String.concat "," (List.map init ins) ^ "}])),\n"
-  ) nodes |> String.concat "" in
+      indent 1 "register(" ^ n ^ ", " ^
+      "spawn(?MODULE, " ^ n ^ ", [" ^ init n ^", {" ^ (concat_map "," init ins) ^ "}])),\n"
+  ) nodes in
   "main() -> \n" ^
   spawn ^
-  "\tin()."
+  indent 1 "in()."
 
 let in_node deps (id, _) = 
   id ^ "() ->\n" ^ 
-  String.concat "\n" (List.map (fun s -> "\t" ^ s) [
+  concat_map "\n" (indent 1) [
   "receive";
   "Value ->";
     S.elements ((M.find id deps).outs) |>
-    List.map (fun s -> "\t" ^ s ^ " ! {" ^ id ^ ", Value}") |>
-    String.concat ";\n";
-  "\tend,";
-  id ^ "()."])
+    concat_map ";\n" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value}");
+  indent 1 "end,";
+  id ^ "()."]
 
-let def_node deps env = function
+
+let def_node deps renv = 
+  let env = !renv in function
   | Node ((id, _), init, expr) ->
     let dep = M.find id deps in
     let in_ids = S.elements dep.ins in
     let out_ids = S.elements dep.outs in
-    id ^ "(" ^ last_sig_var id ^ ",{" ^ String.concat "," (List.map last_sig_var in_ids) ^ "}) ->\n" ^
-    "\treceive\n" ^
-    String.concat ";\n" (List.map (fun in_id ->
+    id ^ "(" ^ last_sig_var id ^ ",{" ^ (concat_map "," last_sig_var in_ids) ^ "}) ->\n" ^
+    indent 1"receive\n" ^
+    (concat_map ";\n" (fun in_id ->
       let newenv = env |> M.add in_id (sig_var in_id) in
-      "\t\t{" ^ in_id ^ ", " ^ sig_var in_id ^ "} when " ^ sig_var in_id ^ " /= " ^ last_sig_var in_id ^ " ->\n" ^
-      String.concat ",\n" (List.map (fun s -> "\t\t\t" ^ s) (
+      indent 2 "{" ^ in_id ^ ", " ^ sig_var in_id ^ "} when " ^ sig_var in_id ^ " /= " ^ last_sig_var in_id ^ " ->\n" ^
+      (concat_map ",\n" (indent 3) (
         [sig_var id ^ " = " ^ erlang_of_expr newenv expr] @
-        List.map (fun i -> i ^ "!" ^ "{" ^ id ^ "," ^ sig_var id ^ "}") out_ids @
-        [id ^ "(" ^ sig_var id ^ ", {" ^ String.concat "," (List.map (fun i -> M.find i newenv) in_ids) ^ "})"]
+        List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ "," ^ sig_var id ^ "}") out_ids @
+        [id ^ "(" ^ sig_var id ^ ", {" ^ (concat_map "," (fun i -> M.find i newenv) in_ids) ^ "})"]
       ))
-    ) in_ids) ^
-    "\n\tend."
-  (*| Const ((id, _), e) -> 
-    "-define(" ^ const id ^ ", " ^ erlang_of_expr e ^ ")."
+    ) in_ids) ^ "\n" ^
+    indent 1 "end."
+  | Const ((id, _), e) -> 
+    renv := M.add id ("?" ^ const id) env;
+    "-define(" ^ const id ^ ", " ^ erlang_of_expr env e ^ ")."
   | Fun ((id, _), e) ->
-    id ^ erlang_of_expr e ^ "."*)
+    id ^ erlang_of_expr env e ^ "."
 
 let init_values x ti =
   let of_type = let open Type in function
@@ -129,25 +135,22 @@ let of_xmodule x ti =
   in
   String.concat "\n\n" ([
     "-module(" ^ String.lowercase_ascii x.id ^ ")."; 
-    String.concat "\n" 
-      (List.map (fun l -> "-export([" ^ 
-        String.concat "," (List.map (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
+      (concat_map "\n" (fun l -> "-export([" ^ 
+        (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
        ^ "]).") attributes);
     main dep x (init_values x ti) env;
     (* infunc *)
     "in() -> \n" ^
-    "\t%fill here\n" ^
-    String.concat "" 
-      (List.map (fun (i, _) -> "\t% " ^ i ^ " ! sth\n") x.in_node) ^
-    "\tin().";
+    indent 1 "%fill here\n" ^
+    (concat_map "" (fun (i, _) -> indent 1 "% " ^ i ^ " ! sth\n") x.in_node) ^
+    indent 1 "in().";
     (* outfunc *)
     "out() -> \n" ^
-    "\treceive\n" ^
-    String.concat ";\n"
-      (List.map (fun (i, _) -> "\t\t{" ^ i ^ ", Value} -> Value") x.out_node) ^
-    "\n\tend,\n" ^
-    "\tout().";
+    indent 1 "receive\n" ^
+    (concat_map ";\n" (fun (i, _) -> indent 2 "{" ^ i ^ ", Value} -> Value") x.out_node) ^ "\n" ^
+    indent 1 "end,\n" ^
+    indent 1 "out().";
   ] 
   @ (List.map (in_node dep) x.in_node)
-  @ (List.map (def_node dep env) x.definition)
+  @ (let renv = ref env in List.map (def_node dep renv) x.definition)
   )
