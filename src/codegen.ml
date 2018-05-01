@@ -112,10 +112,10 @@ let init_values x ti =
     | _ -> assert false in
   let collect m = function 
     | Node((i, _), Some(init), _) -> M.add i init m
-    | Node((i, _), None, _) -> M.add i (of_type (TypeInfo.find i ti)) m
+    | Node((i, _), None, _) -> M.add i (of_type (Typeinfo.find i ti)) m
     | _ -> m
   in
-  let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (TypeInfo.find i ti)) m) M.empty x.in_node in
+  let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (Typeinfo.find i ti)) m) M.empty x.in_node in
   List.fold_left collect ins x.definition
  
 let of_xmodule x ti = 

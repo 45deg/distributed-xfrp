@@ -117,7 +117,7 @@ let rec infer env level e =
     | CInt _ -> TInt
     | CFloat _ -> TFloat)
   | EId(id) | EAnnot(id, _) ->
-    (match (TypeInfo.lookup env id) with
+    (match (Typeinfo.lookup env id) with
     | Some(t) -> instantiate level t
     (*| None    -> gen_var level)*)
     | None -> raise (TypeError("unknown variable: " ^ id)))
@@ -128,7 +128,7 @@ let rec infer env level e =
       | t1, Some(t2) -> unify t1 t2
       | _, None -> ()) var_ts tanots;
     let gen_ts = List.map (generalize level) var_ts in
-    infer (TypeInfo.extend_all env ids gen_ts) level body
+    infer (Typeinfo.extend_all env ids gen_ts) level body
   | EApp(f_id, args) ->
     let args_t, ret_t =
       match_fun (List.length args) (infer env level (EId(f_id)))
@@ -156,13 +156,13 @@ let rec infer env level e =
     unify a_t b_t; a_t
   | EFun(args, body) ->
       let args_t = gen_var_list level (List.length args) in
-      let fn_env = List.fold_left2 TypeInfo.extend env args args_t in
+      let fn_env = List.fold_left2 Typeinfo.extend env args args_t in
       let ret_t = infer fn_env level body in
       TFun(args_t, ret_t)
   | ECase(m, bodies) -> assert false
   in 
   let fe = f e in 
-    print_endline ("INFER " ^ TypeInfo.string_of_ti env ^
+    print_endline ("INFER " ^ Typeinfo.string_of_ti env ^
                    " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
     fe
 
@@ -192,12 +192,12 @@ let type_module ({ definition = defs; in_node = i; out_node = o; _ }) =
     collect (i :: is, t :: ts, e :: es) xs
   in
   let (ids, annots, exprs) = collect ([], [], []) defs in
-  let ioenv = List.fold_left (fun m (i, t) -> TypeInfo.extend m i t) TypeInfo.empty (i @ o) in
-  let env = List.fold_left2 TypeInfo.extend ioenv ids annots in
+  let ioenv = List.fold_left (fun m (i, t) -> Typeinfo.extend m i t) Typeinfo.empty (i @ o) in
+  let env = List.fold_left2 Typeinfo.extend ioenv ids annots in
   let exprs_t = List.map (infer env 1) exprs in
   List.iter2 unify exprs_t annots;
   let gen_ts = List.map (generalize 0) exprs_t in
-  let result = TypeInfo.extend_all env ids gen_ts in
-  if TypeInfo.for_all (fun _ t -> is_concrete t) result
+  let result = Typeinfo.extend_all env ids gen_ts in
+  if Typeinfo.for_all (fun _ t -> is_concrete t) result
     then result
-    else raise (TypeError("Generic types remain: " ^ TypeInfo.string_of_ti env))
+    else raise (TypeError("Generic types remain: " ^ Typeinfo.string_of_ti env))
