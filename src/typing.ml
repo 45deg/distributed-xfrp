@@ -155,11 +155,15 @@ let rec infer env level e =
     let b_t = infer env level b in
     unify a_t b_t; a_t
   | EFun(args, body) ->
-      let args_t = gen_var_list level (List.length args) in
-      let fn_env = List.fold_left2 Typeinfo.extend env args args_t in
-      let ret_t = infer fn_env level body in
-      TFun(args_t, ret_t)
-  | ECase(m, bodies) -> assert false
+    let args_t = gen_var_list level (List.length args) in
+    let fn_env = List.fold_left2 Typeinfo.extend env args args_t in
+    let ret_t = infer fn_env level body in
+    TFun(args_t, ret_t)
+  | ECase(m, bodies) -> 
+    match List.map snd bodies with
+    | [] -> TUnit
+    | a :: [] -> infer env level a
+    | a :: xs -> List.fold_left (fun t e -> unify t (infer env level e); t) (infer env level a) xs
   in 
   let fe = f e in 
     print_endline ("INFER " ^ Typeinfo.string_of_ti env ^

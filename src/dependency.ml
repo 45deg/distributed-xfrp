@@ -29,7 +29,7 @@ let get_graph xmodule =
     | ETuple es -> List.map extract es |> List.fold_left S.union S.empty
     | EFun (args, e) -> 
       S.diff (extract e) (S.of_list args)
-    | ECase(e, list) -> assert false
+    | ECase(m, list) -> (extract m :: List.map (fun (_, e) -> extract e) list) |> List.fold_left S.union S.empty
   in
   let rec collect result = function
     | [] -> result
