@@ -5,7 +5,6 @@ Xfrp for OCaml
 
 ```
 opam install menhir
-opam install ppx_deriving
 
 make
 ```
