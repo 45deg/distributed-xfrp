@@ -3,25 +3,6 @@ open Syntax
 
 exception TypeError of string
 
-module Env = struct 
-  module M = Map.Make (struct
-                      type t = Syntax.id
-                      let compare = compare
-                    end)
-  type env = Type.t M.t
-  let empty: env = M.empty
-  let extend env id ty = M.add id ty env
-  let extend_all env ids tys = List.fold_left2 extend env ids tys 
-  let lookup env id = 
-    try Some(M.find id env)
-    with | Not_found -> None
-  let rec string_of_env env = 
-    M.bindings env 
-    |> List.map (fun (a, b) -> "(" ^ a ^ ", " ^ string_of_type b ^ ")")
-    |> String.concat ","
-    |> fun s -> "{" ^ s ^ "}"
-end
-
 let rec adjust_level id level = function
   | TVar {contents = TVBound ty}
     -> adjust_level id level ty
@@ -125,6 +106,7 @@ let split3 list =
       f rest (x :: xs, y :: ys, z :: zs)
   in f list ([], [], [])
 
+
 let rec infer env level e = 
   let f = function
   | EConst(c) ->
@@ -137,7 +119,8 @@ let rec infer env level e =
   | EId(id) | EAnnot(id, _) ->
     (match (Env.lookup env id) with
     | Some(t) -> instantiate level t
-    | None    -> gen_var level)
+    (*| None    -> gen_var level)*)
+    | None -> raise (TypeError("unknown variable: " ^ id)))
   | ELet(binds, body) ->
     let (ids, es, tanots) = split3 binds in
     let var_ts = List.map (infer env (level + 1)) es in
@@ -158,7 +141,10 @@ let rec infer env level e =
   | EBin(b, e1, e2) ->
     let t1 = infer env level e1 in
     let t2 = infer env level e2 in
-    unify t1 t2; t1
+    unify t1 t2; 
+    (match b with
+      | BLt | BLte | BGt | BGte | BEq | BNe | BLAnd | BLOr -> TBool
+      | _ -> t1)
   | EUni(o, e) ->
     infer env level e
   | ETuple(es) ->
@@ -168,16 +154,34 @@ let rec infer env level e =
     let a_t = infer env level a in
     let b_t = infer env level b in
     unify a_t b_t; a_t
-(*
-  | Fun(args, body) ->
+  | EFun(args, body) ->
       let args_t = gen_var_list level (List.length args) in
       let fn_env = List.fold_left2 Env.extend env args args_t in
       let ret_t = infer fn_env level body in
       TFun(args_t, ret_t)
-*)
   | ECase(m, bodies) -> assert false
   in 
   let fe = f e in 
     print_endline ("INFER " ^ Env.string_of_env env ^
-                   " (" ^ string_of_int level ^ "," ^ show_expr e ^ ") |- " ^ string_of_type fe);
+                   " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
     fe
+
+let type_module ({ definition = defs; in_node = i; out_node = o; _ }) = 
+  let default = function 
+  | Some(t) -> t
+  | None    -> gen_var 0 in
+  let rec collect (is, ts, es) = function 
+  | [] -> (is, ts, es)
+  | (Const ((i, t), e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
+  | (Node ((i, t), _, e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
+  | (Fun ((i, (at, rt)), e)) :: xs -> 
+    let t = TFun(List.map default at, default rt) in
+    collect (i :: is, t :: ts, e :: es) xs
+  in
+  let (ids, annots, exprs) = collect ([], [], []) defs in
+  let ioenv = List.fold_left (fun m (i, t) -> Env.extend m i t) Env.empty (i @ o) in
+  let env = List.fold_left2 Env.extend ioenv ids annots in
+  let exprs_t = List.map (infer env 1) exprs in
+  List.iter2 unify exprs_t annots;
+  let gen_ts = List.map (generalize 0) exprs_t in
+  Env.extend_all env ids gen_ts
