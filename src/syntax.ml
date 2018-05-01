@@ -62,12 +62,21 @@ type xmodule = {
   definition: definition list;
 }
 
+let rec string_of_const = function
+  | CUnit -> "()"
+  | CBool b -> string_of_bool b
+  | CInt i  -> string_of_int i
+  | CFloat f  -> string_of_float f
+  | CChar c -> String.make 1 c
+
+let rec string_of_pat = function
+  | PWild -> "_"
+  | PConst c -> string_of_const c
+  | PVar id -> id
+  | PTuple t -> List.map string_of_pat t |> String.concat ","
+
 let rec string_of_expr = function
-  | EConst CUnit -> "()"
-  | EConst (CBool b) -> string_of_bool b
-  | EConst (CInt i)  -> string_of_int i
-  | EConst (CFloat f)  -> string_of_float f
-  | EConst (CChar c) -> String.make 1 c
+  | EConst c -> string_of_const c
   | EId id -> id
   | EAnnot (id, ALast) -> id ^ "@last"
   | EApp (id, es) -> id ^ "(" ^ String.concat "," (List.map string_of_expr es) ^ ")"
@@ -92,7 +101,9 @@ let rec string_of_expr = function
     "(" ^ String.concat "," (List.map string_of_expr es) ^ ")"
   | EFun (args, e) ->
     "fun (" ^ String.concat ", " args ^ ") -> " ^ string_of_expr e
-  | ECase(e, list) -> "[NOT IMPLEMENTED]"
+  | ECase(m, cls) -> 
+    let f (p, e) = "| " ^ string_of_pat p ^ " -> "^ string_of_expr e ^ "; " in
+    "case " ^ string_of_expr m ^ " of " ^ String.concat "" (List.map f cls)
 
 let string_of_definition defs = 
   let open Type in
