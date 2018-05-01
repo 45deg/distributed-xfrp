@@ -11,7 +11,7 @@ let () =
     print_endline "==========================";
     Syntax.pp_module main;
     print_endline "==========================";
-    print_endline (TypeInfo.string_of_ti ti);
+    print_endline (Typeinfo.string_of_ti ti);
     print_endline "==========================";
     print_endline (Codegen.of_xmodule main ti)
   with
