@@ -102,7 +102,7 @@ let rec string_of_expr = function
   | EFun (args, e) ->
     "fun (" ^ String.concat ", " args ^ ") -> " ^ string_of_expr e
   | ECase(m, cls) -> 
-    let f (p, e) = "| " ^ string_of_pat p ^ " -> "^ string_of_expr e ^ "; " in
+    let f (p, e) = string_of_pat p ^ " -> "^ string_of_expr e ^ "; " in
     "case " ^ string_of_expr m ^ " of " ^ String.concat "" (List.map f cls)
 
 let string_of_definition defs = 
