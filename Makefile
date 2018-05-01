@@ -34,4 +34,3 @@ debug: sanity
 # check that menhir is installed, use "opam install menhir"
 sanity:
 	which menhir
-	ocamlfind query ppx_deriving
