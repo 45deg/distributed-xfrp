@@ -106,6 +106,7 @@ let split3 list =
       f rest (x :: xs, y :: ys, z :: zs)
   in f list ([], [], [])
 
+
 let rec infer env level e = 
   let f = function
   | EConst(c) ->
