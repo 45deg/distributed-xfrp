@@ -49,7 +49,22 @@ let erlang_of_expr env e =
     | EFun (args, e) ->
       let newenv = List.fold_left (fun env i -> M.add i (var i) env) env args in
       "(" ^ concat_map "," var args ^ ") -> " ^ f newenv e
-    | ECase(e, list) -> raise NotImplemented
+    | ECase(m, list) -> 
+      let rec pat = function
+        | PWild -> ("_", [])
+        | PConst c -> (f env (EConst c), [])
+        | PVar v -> (var v, [v])
+        | PTuple ts -> 
+          let (s, vs) = List.split (List.map pat ts) in
+          ("{" ^ (String.concat "," s) ^ "}", List.flatten vs) in
+      let body (p, e) =
+        let (ps, pvs) = pat p in
+        let newenv = List.fold_left (fun e i -> M.add i (var i) e) env pvs in
+        ps ^ " -> " ^ f newenv e
+      in
+      "(case " ^ f env m ^ " of " ^
+        concat_map "; " body list ^
+      " end)"
   in f env e
 
 let main deps xmod inits env = 
