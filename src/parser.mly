@@ -161,7 +161,7 @@ case_body:
 
 pattern:
   | prim_pattern { $1 }
-  | LPAREN ps = separated_list(COMMA, prim_pattern) RPAREN
+  | LPAREN ps = separated_list(COMMA, pattern) RPAREN
     { match ps with
       | [] -> PConst(CUnit)
       | _  -> PTuple(ps)
