@@ -47,7 +47,7 @@ let erlang_of_expr env e =
       let bex = List.map (fun (_,e,_) -> f env e) binders in
       let newenv = List.fold_left (fun env (i,_,_) -> M.add i (var i) env) env binders in
       "(case {" ^ String.concat "," bex ^ "} of " ^ 
-      "{" ^ String.concat "," bid ^ "} -> " ^ f newenv e ^ ")"
+      "{" ^ String.concat "," bid ^ "} -> " ^ f newenv e ^ " end)"
     | EIf(c, a, b) -> 
       "(case " ^ f env c ^ " of true -> " ^ f env a ^ "; false -> " ^ f env b ^ " end)"
     | ETuple es ->
