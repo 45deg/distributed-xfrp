@@ -22,9 +22,11 @@ let get_graph xmodule =
     | EApp (id, es) -> S.singleton id
     | EBin (_, e1, e2) -> S.union (extract e1) (extract e2)
     | EUni (op, e) -> extract e
-    | ELet (binders, e) ->
-      let ids = List.map (fun (a, _, _) -> a) binders in
-      S.diff (extract e) (S.of_list ids)
+    | ELet (binders, expr) ->
+      let (outer, inner) = List.fold_left (fun (outer, inner) (i, e, _) -> 
+        (S.union (extract e) outer, S.remove i inner)
+      ) (S.empty, extract expr) binders 
+      in S.union outer inner
     | EIf(c, a, b) -> S.union (extract c) (S.union (extract a) (extract b))
     | ETuple es -> List.map extract es |> List.fold_left S.union S.empty
     | EFun (args, e) -> 

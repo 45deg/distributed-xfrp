@@ -106,16 +106,16 @@ let split3 list =
       f rest (x :: xs, y :: ys, z :: zs)
   in f list ([], [], [])
 
-
-let rec infer env level e = 
-  let f = function
-  | EConst(c) ->
-    (match c with
+let type_of_const = function
     | CUnit -> TUnit
     | CBool _ -> TBool
     | CChar _ -> TChar
     | CInt _ -> TInt
-    | CFloat _ -> TFloat)
+    | CFloat _ -> TFloat
+
+let rec infer env level e = 
+  let f = function
+  | EConst(c) -> type_of_const c
   | EId(id) | EAnnot(id, _) ->
     (match (Typeinfo.lookup env id) with
     | Some(t) -> instantiate level t
@@ -160,10 +160,26 @@ let rec infer env level e =
     let ret_t = infer fn_env level body in
     TFun(args_t, ret_t)
   | ECase(m, bodies) -> 
-    match List.map snd bodies with
+    let rec type_of_pattern = function
+    | PWild -> (gen_var (level + 1), [])
+    | PConst c -> (type_of_const c, [])
+    | PVar v -> let vt = gen_var (level + 1) in (vt, [(v, vt)])
+    | PTuple ps -> 
+      let (ts, binds) = List.split (List.map type_of_pattern ps) in
+      (TTuple ts, List.flatten binds)
+    in
+    let rec infer_bodies mt = function
     | [] -> TUnit
-    | a :: [] -> infer env level a
-    | a :: xs -> List.fold_left (fun t e -> unify t (infer env level e); t) (infer env level a) xs
+    | (p, e) :: rest ->
+      let (pt, binds) = type_of_pattern p in
+      unify mt pt; (* check: pattern *)
+      let nenv = List.fold_left (fun e (i, t) -> Typeinfo.extend e i t) env binds in
+      let et = infer nenv level e in 
+      match rest with 
+        | [] -> et
+        | _  -> unify et (infer_bodies mt rest); et (* check: body *)
+    in
+    infer_bodies (infer env level m) bodies
   in 
   let fe = f e in 
     print_endline ("INFER " ^ Typeinfo.string_of_ti env ^

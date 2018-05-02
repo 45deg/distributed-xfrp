@@ -4,7 +4,11 @@ open Dependency
 module S = Set.Make(String);;
 module M = Map.Make(String);;
 
-exception NotImplemented
+
+exception UnknownId of string
+let try_find id m = begin
+  try M.find id m with Not_found -> (raise (UnknownId(id)))
+end
 
 let var s = "V" ^ s
 let sig_var s = "S" ^ s
@@ -23,8 +27,8 @@ let erlang_of_expr env e =
     | EConst (CInt i)  -> string_of_int i
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
     | EConst (CChar c) -> "?" ^ Char.escaped c
-    | EId id -> M.find id env
-    | EAnnot (id, ALast) -> at_last (M.find id env)
+    | EId id -> try_find id env
+    | EAnnot (id, ALast) -> try_find id env
     | EApp (id, es) -> (* workaround *)
       id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
@@ -39,9 +43,11 @@ let erlang_of_expr env e =
       | UNeg -> "-" ^ f env e
       | UInv -> "(bnot " ^ f env e ^ ")") 
     | ELet (binders, e) -> 
-      let vars = List.map (fun (i,e,_) -> var i ^ "=" ^ f env e) binders |> String.concat "," in
+      let bid = List.map (fun (i,_,_) -> var i) binders in
+      let bex = List.map (fun (_,e,_) -> f env e) binders in
       let newenv = List.fold_left (fun env (i,_,_) -> M.add i (var i) env) env binders in
-      vars ^ "," ^ f newenv e
+      "(case {" ^ String.concat "," bex ^ "} of " ^ 
+      "{" ^ String.concat "," bid ^ "} -> " ^ f newenv e ^ " end)"
     | EIf(c, a, b) -> 
       "(case " ^ f env c ^ " of true -> " ^ f env a ^ "; false -> " ^ f env b ^ " end)"
     | ETuple es ->
@@ -73,8 +79,8 @@ let main deps xmod inits env =
     if List.exists (fun (i, _) -> i == n) xmod.in_node then (* refactor needed *)
       indent 1 "register(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
     else
-      let init i = M.find i inits |> erlang_of_expr env in
-      let ins = S.elements (M.find n deps).ins in
+      let init i = try_find i inits |> erlang_of_expr env in
+      let ins = S.elements (try_find n deps).ins in
       indent 1 "register(" ^ n ^ ", " ^
       "spawn(?MODULE, " ^ n ^ ", [" ^ init n ^", {" ^ (concat_map "," init ins) ^ "}])),\n"
   ) nodes in
@@ -87,7 +93,7 @@ let in_node deps (id, _) =
   concat_map "\n" (indent 1) [
   "receive";
   "Value ->";
-    S.elements ((M.find id deps).outs) |>
+    S.elements ((try_find id deps).outs) |>
     concat_map ";\n" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value}");
   indent 1 "end,";
   id ^ "()."]
@@ -95,8 +101,8 @@ let in_node deps (id, _) =
 
 let def_node deps renv = 
   let env = !renv in function
-  | Node ((id, _), init, expr) ->
-    let dep = M.find id deps in
+  | Node ((id, _), init, expr) -> 
+    let dep = (try M.find id deps with Not_found -> (raise (UnknownId id))) in
     let in_ids = S.elements dep.ins in
     let out_ids = S.elements dep.outs in
     id ^ "(" ^ last_sig_var id ^ ",{" ^ (concat_map "," last_sig_var in_ids) ^ "}) ->\n" ^
@@ -107,7 +113,7 @@ let def_node deps renv =
       (concat_map ",\n" (indent 3) (
         [sig_var id ^ " = " ^ erlang_of_expr newenv expr] @
         List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ "," ^ sig_var id ^ "}") out_ids @
-        [id ^ "(" ^ sig_var id ^ ", {" ^ (concat_map "," (fun i -> M.find i newenv) in_ids) ^ "})"]
+        [id ^ "(" ^ sig_var id ^ ", {" ^ (concat_map "," (fun i -> try_find i newenv) in_ids) ^ "})"]
       ))
     ) in_ids) ^ "\n" ^
     indent 1 "end."
@@ -118,12 +124,13 @@ let def_node deps renv =
     id ^ erlang_of_expr env e ^ "."
 
 let init_values x ti =
-  let of_type = let open Type in function
+  let rec of_type = let open Type in function
     | TUnit -> EConst(CUnit)
     | TBool -> EConst(CBool(false))
     | TInt  -> EConst(CInt(0))
     | TFloat -> EConst(CFloat(0.0))
     | TChar -> EConst(CBool(false))
+    | TTuple ts -> ETuple(List.map of_type ts)
     | _ -> assert false in
   let collect m = function 
     | Node((i, _), Some(init), _) -> M.add i init m
