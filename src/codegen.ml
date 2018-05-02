@@ -10,7 +10,9 @@ let try_find id m = begin
   try M.find id m with Not_found -> (raise (UnknownId(id)))
 end
 
-let var s = "V" ^ s
+let var = function
+  | "_" -> "_"
+  | s -> "V" ^ s
 let sig_var s = "S" ^ s
 let last_sig_var s = "LS" ^ s
 let at_last var = if var.[0] == 'S' then "L" ^ var else var
@@ -22,7 +24,7 @@ let const s = String.uppercase_ascii s
 
 let erlang_of_expr env e = 
   let rec f env = function
-    | EConst CUnit -> "()"
+    | EConst CUnit -> "void"
     | EConst (CBool b) -> string_of_bool b
     | EConst (CInt i)  -> string_of_int i
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
@@ -82,7 +84,7 @@ let main deps xmod inits env =
       let init i = try_find i inits |> erlang_of_expr env in
       let ins = S.elements (try_find n deps).ins in
       indent 1 "register(" ^ n ^ ", " ^
-      "spawn(?MODULE, " ^ n ^ ", [" ^ init n ^", {" ^ (concat_map "," init ins) ^ "}])),\n"
+      "spawn(?MODULE, " ^ n ^ ", [{" ^ (concat_map "," init ins) ^ "}])),\n"
   ) nodes in
   "main() -> \n" ^
   spawn ^
@@ -105,15 +107,15 @@ let def_node deps renv =
     let dep = (try M.find id deps with Not_found -> (raise (UnknownId id))) in
     let in_ids = S.elements dep.ins in
     let out_ids = S.elements dep.outs in
-    id ^ "(" ^ last_sig_var id ^ ",{" ^ (concat_map "," last_sig_var in_ids) ^ "}) ->\n" ^
+    id ^ "({" ^ (concat_map "," last_sig_var in_ids) ^ "}) ->\n" ^
     indent 1"receive\n" ^
     (concat_map ";\n" (fun in_id ->
       let newenv = env |> M.add in_id (sig_var in_id) in
       indent 2 "{" ^ in_id ^ ", " ^ sig_var in_id ^ "} when " ^ sig_var in_id ^ " /= " ^ last_sig_var in_id ^ " ->\n" ^
       (concat_map ",\n" (indent 3) (
-        [sig_var id ^ " = " ^ erlang_of_expr newenv expr] @
-        List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ "," ^ sig_var id ^ "}") out_ids @
-        [id ^ "(" ^ sig_var id ^ ", {" ^ (concat_map "," (fun i -> try_find i newenv) in_ids) ^ "})"]
+        ["Curr = " ^ erlang_of_expr newenv expr] @
+        List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ ", Curr}") out_ids @
+        [id ^ "({" ^ (concat_map "," (fun i -> if i == id then "Curr" else try_find i newenv) in_ids) ^ "})"]
       ))
     ) in_ids) ^ "\n" ^
     indent 1 "end."
@@ -146,7 +148,7 @@ let of_xmodule x ti =
     [[("main", 0)]; [("in", 0); ("out", 0)];
      List.map (fun (i,_) -> (i, 0)) x.in_node;
      List.fold_left (fun l e -> match e with
-     | Node ((id, _), _, _) -> (id, 2) :: l
+     | Node ((id, _), _, _) -> (id, 1) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
      | _ -> l
      ) [] x.definition
