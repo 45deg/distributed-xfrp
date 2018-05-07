@@ -78,7 +78,7 @@ let erlang_of_expr env e =
 let main deps xmod inits env = 
   let nodes = M.bindings deps |> List.map fst in
   let spawn = concat_map "" (fun n ->
-    if List.exists (fun (i, _) -> i == n) xmod.in_node then (* refactor needed *)
+    if List.exists (fun (i, _) -> i == n) xmod.in_node || compare n "out" == 0 then (* refactor needed *)
       indent 1 "register(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
     else
       let init i = try_find i inits |> erlang_of_expr env in

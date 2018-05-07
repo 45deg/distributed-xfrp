@@ -32,7 +32,7 @@ let compile in_c =
     Codegen.of_xmodule main ti template
   with 
   | Lexer.Error msg ->
-    raise (CompileError("Lexing rrror: " ^ msg))
+    raise (CompileError("Lexing error: " ^ msg))
   | Parser.Error ->
     let pos = lexbuf.lex_curr_p in
     raise (CompileError(Printf.sprintf "Syntax error at Line %d, Char %d." pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))
