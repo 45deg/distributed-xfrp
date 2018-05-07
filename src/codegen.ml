@@ -142,7 +142,22 @@ let init_values x ti =
   let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (Typeinfo.find i ti)) m) M.empty x.in_node in
   List.fold_left collect ins x.definition
  
-let of_xmodule x ti = 
+let in_func x = String.concat "\n" @@
+  "in() ->" :: List.map (indent 1) (
+    "%fill here" ::
+    List.map (fun (i, _) -> "% " ^ i ^ " ! sth") x.in_node @
+    ["in()."]
+  )
+
+let out_func x = String.concat "\n" @@
+  "out() ->" :: List.map (indent 1) [
+    "receive";
+    (concat_map ";\n" (fun (i, _) -> indent 1 "{" ^ i ^ ", Value} -> Value") x.out_node);
+    "end,";
+    "out()."
+  ]
+
+let of_xmodule x ti template = 
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
@@ -154,27 +169,20 @@ let of_xmodule x ti =
      ) [] x.definition
      ]
   in
+  let exports = (concat_map "\n" (fun l -> "-export([" ^ 
+      (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
+    ^ "]).") attributes) in
   let env = M.bindings dep
             |> List.fold_left (fun env (id, _) -> M.add id (last_sig_var id) env) M.empty
   in
-  String.concat "\n\n" ([
-    "-module(" ^ String.lowercase_ascii x.id ^ ")."; 
-      (concat_map "\n" (fun l -> "-export([" ^ 
-        (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
-       ^ "]).") attributes);
-    main dep x (init_values x ti) env;
-    (* infunc *)
-    "in() -> \n" ^
-    indent 1 "%fill here\n" ^
-    (concat_map "" (fun (i, _) -> indent 1 "% " ^ i ^ " ! sth\n") x.in_node) ^
-    indent 1 "in().";
+  String.concat "\n\n" (
+    ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
+    exports ::
+    main dep x (init_values x ti) env ::
+    (match template with
+      | Some s -> [s]
+      | None   -> [in_func x; out_func x])
     (* outfunc *)
-    "out() -> \n" ^
-    indent 1 "receive\n" ^
-    (concat_map ";\n" (fun (i, _) -> indent 2 "{" ^ i ^ ", Value} -> Value") x.out_node) ^ "\n" ^
-    indent 1 "end,\n" ^
-    indent 1 "out().";
-  ] 
-  @ (List.map (in_node dep) x.in_node)
-  @ (let renv = ref env in List.map (def_node dep renv) x.definition)
+    @ (List.map (in_node dep) x.in_node)
+    @ (let renv = ref env in List.map (def_node dep renv) x.definition)
   )
