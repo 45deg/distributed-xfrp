@@ -55,6 +55,7 @@ let get_graph xmodule =
     ) m M.empty
   in
   collect M.empty xmodule.definition |>
+  M.add "out" (S.of_list (List.map fst xmodule.out_node)) |>
   filter xmodule.in_node |>
   (fun m -> M.merge (fun k ao bo -> match ao, bo with
     | Some(a), Some(b) -> Some({ ins = a; outs = b})
