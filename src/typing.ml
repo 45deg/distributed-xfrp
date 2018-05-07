@@ -24,7 +24,6 @@ let rec adjust_level id level = function
   | _ -> ()
 
 let rec unify t1 t2 = 
-  let rec unify t1 t2 =
   if t1 == t2 then ()
   else match t1, t2 with
     | TUnit, TUnit
@@ -45,11 +44,7 @@ let rec unify t1 t2 =
         adjust_level id level t;
         tv := TVBound(t)
     | _, _ -> raise (TypeError("unification failed with " ^ string_of_type t1 ^ " and " ^ string_of_type t2))
-  in 
-    print_string ("\tUNIFY (" ^ string_of_type t1 ^ "," ^ string_of_type t2 ^ ")");
-    unify t1 t2; 
-    print_endline (" +-> (" ^ string_of_type t1 ^ "," ^ string_of_type t2 ^ ")")
-
+  
 let rec generalize level = function
   | TFun(args, ret) ->
     TFun(List.map (generalize level) args, generalize level ret)
@@ -113,8 +108,7 @@ let type_of_const = function
     | CInt _ -> TInt
     | CFloat _ -> TFloat
 
-let rec infer env level e = 
-  let f = function
+let rec infer env level = function
   | EConst(c) -> type_of_const c
   | EId(id) | EAnnot(id, _) ->
     (match (Typeinfo.lookup env id) with
@@ -180,11 +174,6 @@ let rec infer env level e =
         | _  -> unify et (infer_bodies mt rest); et (* check: body *)
     in
     infer_bodies (infer env level m) bodies
-  in 
-  let fe = f e in 
-    print_endline ("INFER " ^ Typeinfo.string_of_ti env ^
-                   " (" ^ string_of_int level ^ "," ^ string_of_expr e ^ ") |- " ^ string_of_type fe);
-    fe
 
 let rec is_concrete = function
   | TVar {contents = TVBound ty}

@@ -8,11 +8,6 @@ let () =
   try
     let main = Parser.prog_module Lexer.read filebuf in
     let ti = Typing.type_module main in
-    print_endline "==========================";
-    Syntax.pp_module main;
-    print_endline "==========================";
-    print_endline (Typeinfo.string_of_ti ti);
-    print_endline "==========================";
     print_endline (Codegen.of_xmodule main ti)
   with
   | Lexer.Error msg ->
