@@ -157,7 +157,7 @@ let out_func x = String.concat "\n" @@
     "out()."
   ]
 
-let of_xmodule x ti = 
+let of_xmodule x ti template = 
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
@@ -179,9 +179,10 @@ let of_xmodule x ti =
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     main dep x (init_values x ti) env ::
-    in_func x ::
-    out_func x ::
+    (match template with
+      | Some s -> [s]
+      | None   -> [in_func x; out_func x])
     (* outfunc *)
-    (List.map (in_node dep) x.in_node)
+    @ (List.map (in_node dep) x.in_node)
     @ (let renv = ref env in List.map (def_node dep renv) x.definition)
   )
