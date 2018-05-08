@@ -1,0 +1,11 @@
+module Split
+in
+  num : Int
+out 
+  ab : Int
+use Std
+
+node a = num * 2
+node b = num + num
+
+node ab = (a, b)
