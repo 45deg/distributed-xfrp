@@ -1,0 +1,12 @@
+out() ->
+    receive
+        {ab, {A, B}} -> 
+            io:format("(~p, ~p)~n", [A, B])
+    end,
+    out().
+
+in() ->
+    num ! rand:uniform(10),
+    timer:sleep(1000),
+    io:format("~n", []),
+    in().
