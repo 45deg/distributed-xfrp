@@ -96,8 +96,8 @@ let in_node deps (id, _) =
   "receive";
   "Value ->";
     S.elements ((try_find id deps).outs) |>
-    concat_map ";\n" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value}");
-  indent 1 "end,";
+    concat_map ",\n\t" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value}");
+  "end,";
   id ^ "()."]
 
 
