@@ -1,0 +1,8 @@
+module Adder
+in
+  input : Int
+out 
+  count : Int
+use Std
+
+node init[0] count = count@last + input
