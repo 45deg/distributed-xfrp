@@ -2,6 +2,20 @@
 
 rm -rf ./*.beam
 
-erlc fan_controller.erl
-
-echo " c(fan_controller). dbg:tracer(). dbg:tpl(fan_controller, '_', []). dbg:p(new, m). fan_controller:main()." | erl
+for OPT in "$@"
+do
+  case $OPT in
+  '-nodebug')
+    NODEBUG=1
+    ;;
+  *)
+    erlc $1.erl
+    if [ "$NODEBUG" ]; then
+      echo " c($1). $1:main()." | erl
+    else
+      echo " c($1). dbg:tracer(). dbg:tpl($1, '_', []). dbg:p(new, m). $1:main()." | erl
+    fi
+    ;;
+  esac
+  shift
+done
