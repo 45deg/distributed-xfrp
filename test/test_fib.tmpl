@@ -1,0 +1,12 @@
+out() ->
+    receive
+        {fib, N} -> 
+            io:format("~p~n", [N])
+    end,
+    out().
+
+in() ->
+    pulse ! void,
+    timer:sleep(1000),
+    io:format("~n", []),
+    in().
