@@ -111,7 +111,7 @@ let def_node deps renv =
     indent 1"receive\n" ^
     (concat_map ";\n" (fun in_id ->
       let newenv = env |> M.add in_id (sig_var in_id) in
-      indent 2 "{" ^ in_id ^ ", " ^ sig_var in_id ^ "} when " ^ sig_var in_id ^ " /= " ^ last_sig_var in_id ^ " ->\n" ^
+      indent 2 "{" ^ in_id ^ ", " ^ sig_var in_id ^ "} ->\n" ^
       (concat_map ",\n" (indent 3) (
         ["Curr = " ^ erlang_of_expr newenv expr] @
         List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ ", Curr}") out_ids @
