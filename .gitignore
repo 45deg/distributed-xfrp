@@ -9,3 +9,5 @@ _build
 *.beam
 *.plt
 erl_crash.dump
+
+erlang/*.erl
