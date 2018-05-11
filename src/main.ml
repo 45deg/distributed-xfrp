@@ -3,13 +3,18 @@ open Lexing
 exception CommandError of string
 exception CompileError of string
 
+type mode =
+  Erlang | Dot
+
 let output_file = ref None
 let input_file  = ref None
 let template_file = ref None
+let mode = ref Erlang
 
 let speclist = [
   ("-o", Arg.String(fun s -> output_file := Some(s)), "Write output to file.");
-  ("-t", Arg.String(fun s -> template_file := Some(s)), "Template for I/O functions.")
+  ("-t", Arg.String(fun s -> template_file := Some(s)), "Template for I/O functions.");
+  ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
 ]
 
 let load_file f =
@@ -28,8 +33,12 @@ let compile in_c =
   let lexbuf = from_channel in_c in
   try
     let main = Parser.prog_module Lexer.read lexbuf in
-    let ti = Typing.type_module main in
-    Codegen.of_xmodule main ti template
+    match !mode with
+      | Erlang ->
+        let ti = Typing.type_module main in
+        Codegen.of_xmodule main ti template
+      | Dot ->
+        Graphviz.of_xmodule main
   with 
   | Lexer.Error msg ->
     raise (CompileError("Lexing error: " ^ msg))
