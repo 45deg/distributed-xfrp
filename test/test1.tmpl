@@ -1,0 +1,14 @@
+out() ->
+    receive
+        {fan, true} ->
+            io:fwrite("T\n");
+        {fan, false} ->
+            io:fwrite("F\n")
+    end,
+    out().
+
+in() ->
+    tmp ! rand:uniform() * 5 + 20,
+    hmd ! rand:uniform() * 50 + 50,
+    timer:sleep(1000),
+    in().
