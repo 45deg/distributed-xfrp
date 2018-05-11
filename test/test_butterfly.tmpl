@@ -1,0 +1,17 @@
+out() ->
+    receive
+        {out1, {A, B}} -> 
+            io:format("1: (~p, ~p)~n", [A, B]);
+        {out2, {A, B}} -> 
+            io:format("2: (~p, ~p)~n", [A, B])
+    end,
+    out().
+
+in() ->
+    {A, B} = {rand:uniform(9), rand:uniform(9)},
+    io:format("Emit (~p, ~p)~n", [A, B]),
+    in1 ! A,
+    in2 ! B,
+    timer:sleep(1000),
+    io:format("~n", []),
+    in().

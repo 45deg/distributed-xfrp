@@ -1,0 +1,14 @@
+module Butterfly
+in
+  in1 : Int,
+  in2 : Int
+out 
+  out1 : Int,
+  out2 : Int
+use Std
+
+node a = in1 * 10 + in2
+node b = in2 * 10 + in1
+
+node out1 = (a, b)
+node out2 = (a, b)
