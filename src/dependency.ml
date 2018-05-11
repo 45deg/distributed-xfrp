@@ -19,7 +19,7 @@ let get_graph xmodule =
   let rec extract = function
     | EConst _ -> S.empty
     | EId id | EAnnot (id, _) -> S.singleton id
-    | EApp (id, es) -> S.singleton id
+    | EApp (id, es) -> List.map extract es |> List.fold_left S.union S.empty
     | EBin (_, e1, e2) -> S.union (extract e1) (extract e2)
     | EUni (op, e) -> extract e
     | ELet (binders, expr) ->
