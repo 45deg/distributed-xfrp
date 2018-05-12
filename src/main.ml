@@ -33,13 +33,13 @@ let compile in_c =
   let lexbuf = from_channel in_c in
   try
     let main = Parser.prog_module Lexer.read lexbuf in
-    (*match !mode with
+    match !mode with
       | Erlang ->
-        let ti = Typing.type_module main in
-        Codegen.of_xmodule main ti template
-        Graphviz.of_xmodule main
-      | Dot -> *)
+        (*let ti = Typing.type_module main in
+        Codegen.of_xmodule main ti template *)
         (Dependency.string_of_graph (Dependency.get_graph main))
+      | Dot -> 
+        Graphviz.of_xmodule main
   with 
   | Lexer.Error msg ->
     raise (CompileError("Lexing error: " ^ msg))
