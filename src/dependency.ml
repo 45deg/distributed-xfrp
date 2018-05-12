@@ -84,7 +84,7 @@ let get_graph xmodule =
         try 
           let out = (M.find name rev) in
           S.fold (fun n -> 
-            S.union (f (S.add n visited) n)
+            S.union (f (S.add name visited) n)
           ) out out
         with Not_found -> 
           S.empty
