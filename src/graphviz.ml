@@ -21,7 +21,6 @@ let of_xmodule xmod =
     List.map (fun i -> i ^ " -> " ^ key ^ " [style = dashed];") (dep.Dependency.input_last)
   in
   "digraph " ^ xmod.id ^ " {\n" ^
-    concat_map "\n" (indent 1) (List.map def xmod.in_node) ^ "\n\n" ^
     concat_map "\n" (indent 1) (List.map def deps) ^ "\n\n" ^
     concat_map "\n" (indent 1) (List.map edge deps |> List.flatten) ^ "\n\n" ^
     indent 1 "{ rank = source; " ^ String.concat "; " ins ^ "; }\n" ^

@@ -98,6 +98,7 @@ let get_graph xmodule =
     ) (ancestors in_name) m
   ) M.empty xmodule.in_node
   in
+  List.fold_left (fun m (i, _) -> M.add i ES.empty m) ins xmodule.in_node |>
   M.mapi (fun k i -> 
     let (cur, last) = partition (ES.elements i) in
     { 
@@ -106,7 +107,7 @@ let get_graph xmodule =
       output = (try S.elements (M.find k rev) with Not_found -> []);
       root = (try S.elements (M.find k root) with Not_found -> []);
     }
-  ) ins
+  )
   (*M.add "out" (S.of_list (List.map fst xmodule.out_node)) |>
   (fun m -> M.merge (fun k ao bo -> match ao, bo with (*
     | Some(a), Some(b) -> Some({ input = a; outs = b; root = [] })
