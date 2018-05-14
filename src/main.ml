@@ -35,9 +35,8 @@ let compile in_c =
     let main = Parser.prog_module Lexer.read lexbuf in
     match !mode with
       | Erlang ->
-        (*let ti = Typing.type_module main in
-        Codegen.of_xmodule main ti template *)
-        (Dependency.string_of_graph (Dependency.get_graph main))
+        let ti = Typing.type_module main in
+        Codegen.of_xmodule main ti template
       | Dot -> 
         Graphviz.of_xmodule main
   with 

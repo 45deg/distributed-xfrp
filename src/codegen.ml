@@ -76,48 +76,72 @@ let erlang_of_expr env e =
   in f env e
 
 let main deps xmod inits env = 
-  let nodes = M.bindings deps |> List.map fst in
-  let spawn = concat_map "" (fun n ->
-    if List.exists (fun (i, _) -> i == n) xmod.in_node || compare n "out" == 0 then (* refactor needed *)
-      indent 1 "register(" ^ n ^ ", spawn(?MODULE, " ^ n ^ ", [])),\n"
+  let init i = try_find i inits |> erlang_of_expr env in
+  let init_map node = "#{" ^ 
+    concat_map ", " (fun i -> i ^ " => " ^ init i) node.input_last
+  ^ "}" in
+  let spawn = concat_map "" (fun (id, node) ->
+    if List.exists (fun (i, _) -> compare i id == 0) xmod.in_node then
+      indent 1 "register(" ^ id ^ ", " ^
+      "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
-      let init i = try_find i inits |> erlang_of_expr env in
-      let ins = S.elements (try_find n deps).ins in
-      indent 1 "register(" ^ n ^ ", " ^
-      "spawn(?MODULE, " ^ n ^ ", [{" ^ (concat_map "," init ins) ^ "}])),\n"
-  ) nodes in
+      let init = init_map node in
+      indent 1 "register(" ^ id ^ ", " ^
+      "spawn(?MODULE, " ^ id ^ ", [#{" ^
+        concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
+      ^ "}])),\n"
+  ) (M.bindings deps) in
   "main() -> \n" ^
   spawn ^
+  indent 1 "register(out, spawn(?MODULE, out, [])),\n" ^
   indent 1 "in()."
 
 let in_node deps (id, _) = 
-  id ^ "() ->\n" ^ 
+  id ^ "(Version) ->\n" ^ 
   concat_map "\n" (indent 1) [
   "receive";
   "Value ->";
-    S.elements ((try_find id deps).outs) |>
-    concat_map ",\n\t" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value}");
+    (try_find id deps).output |>
+    concat_map ",\n\t" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value, {" ^ id ^ ", Version}}");
   "end,";
-  id ^ "()."]
+  id ^ "(Version + 1)."]
 
-
-let def_node deps renv = 
+let def_node xmod deps renv = 
   let env = !renv in function
   | Node ((id, _), init, expr) -> 
     let dep = (try M.find id deps with Not_found -> (raise (UnknownId id))) in
-    let in_ids = S.elements dep.ins in
-    let out_ids = S.elements dep.outs in
-    id ^ "({" ^ (concat_map "," last_sig_var in_ids) ^ "}) ->\n" ^
-    indent 1"receive\n" ^
-    (concat_map ";\n" (fun in_id ->
-      let newenv = env |> M.add in_id (sig_var in_id) in
-      indent 2 "{" ^ in_id ^ ", " ^ sig_var in_id ^ "} ->\n" ^
-      (concat_map ",\n" (indent 3) (
-        ["Curr = " ^ erlang_of_expr newenv expr] @
-        List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ ", Curr}") out_ids @
-        [id ^ "({" ^ (concat_map "," (fun i -> if i == id then "Curr" else try_find i newenv) in_ids) ^ "})"]
-      ))
-    ) in_ids) ^ "\n" ^
+    let binds = "#{" ^ String.concat ", " (
+      List.map (fun id -> id ^ " := " ^ sig_var id) dep.input_current @
+      List.map (fun id -> id ^ " := " ^ last_sig_var id) dep.input_last)
+    ^ "}" in
+    let output = if List.exists (fun (i, _) -> compare i id == 0) xmod.out_node then "out" :: dep.output
+                 else dep.output in
+    let newenv = env |> 
+      (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
+      (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
+    id ^ "(Heap) ->\n" ^ 
+    indent 1 "receive {Id,RValue,{RVId, RVersion}} ->\n" ^
+    indent 2 "NewHeap = maps:update_with(case Id of \n" ^
+      (concat_map ";\n" (indent 3) (
+        List.map (fun id -> id ^ " -> {RVId, RVersion}") dep.input_current @
+        List.map (fun id -> id ^ " -> {RVId, RVersion + 1}") dep.input_last
+      )) ^ "\n" ^
+    indent 3 "end,\n" ^
+    indent 3 "fun(M) -> M#{ Id => RValue } end,\n" ^
+    indent 3 "#{ Id => RValue }, Heap),\n" ^
+    indent 2 "HL = lists:keysort(1, maps:to_list(NewHeap)),\n" ^
+    indent 2 "case lists:dropwhile(fun (L) -> case L of\n" ^
+    indent 3 "{ Version, " ^ binds ^ "} ->\n" ^
+    indent 4 "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
+    concat_map "" (indent 4) (
+      List.map (fun i -> i ^ " ! " ^ "{" ^ id ^ ", Curr, Version},\n") output
+    ) ^
+    indent 4 "false;\n" ^
+    indent 3 "_ -> true\n" ^
+    indent 2 "end end, HL) of\n" ^
+    indent 3 "[] -> " ^ id ^ "(NewHeap);\n" ^
+    indent 3 "[{Key, _}|_] -> " ^ id ^ "(maps:remove(Key, NewHeap))\n" ^
+    indent 2 "end\n" ^
     indent 1 "end."
   | Const ((id, _), e) -> 
     renv := M.add id ("?" ^ const id) env;
@@ -152,7 +176,7 @@ let in_func x = String.concat "\n" @@
 let out_func x = String.concat "\n" @@
   "out() ->" :: List.map (indent 1) [
     "receive";
-    (concat_map ";\n" (fun (i, _) -> indent 1 "{" ^ i ^ ", Value} -> Value") x.out_node);
+    (concat_map ";\n" (fun (i, _) -> indent 1 "{" ^ i ^ ", Value, Version} -> Value") x.out_node);
     "end,";
     "out()."
   ]
@@ -161,7 +185,7 @@ let of_xmodule x ti template =
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
-     List.map (fun (i,_) -> (i, 0)) x.in_node;
+     List.map (fun (i,_) -> (i, 1)) x.in_node;
      List.fold_left (fun l e -> match e with
      | Node ((id, _), _, _) -> (id, 1) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
@@ -184,5 +208,5 @@ let of_xmodule x ti template =
       | None   -> [in_func x; out_func x])
     (* outfunc *)
     @ (List.map (in_node dep) x.in_node)
-    @ (let renv = ref env in List.map (def_node dep renv) x.definition)
+    @ (let renv = ref env in List.map (def_node x dep renv) x.definition)
   )
