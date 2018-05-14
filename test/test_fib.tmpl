@@ -1,7 +1,7 @@
 out() ->
     receive
-        {fib, N} -> 
-            io:format("~p~n", [N])
+        {fib, N, Version} -> 
+            io:format("~p @ ~p ~n", [N, Version])
     end,
     out().
 

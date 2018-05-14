@@ -1,7 +1,7 @@
 out() ->
     receive
-        {count, N} -> 
-            io:format("~p~n", [N])
+        {count, N, Version} -> 
+            io:format("~p~n", [N, Version])
     end,
     out().
 

@@ -1,8 +1,8 @@
 out() ->
     receive
-        {fan, true} ->
+        {fan, true, _} ->
             io:fwrite("T\n");
-        {fan, false} ->
+        {fan, false, _} ->
             io:fwrite("F\n")
     end,
     out().

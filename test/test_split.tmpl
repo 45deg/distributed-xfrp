@@ -1,7 +1,7 @@
 out() ->
     receive
-        {ab, {A, B}} -> 
-            io:format("(~p, ~p)~n", [A, B])
+        {ab, {A, B}, Version} -> 
+            io:format("(~p, ~p) @ ~p ~n", [A, B, Version])
     end,
     out().
 

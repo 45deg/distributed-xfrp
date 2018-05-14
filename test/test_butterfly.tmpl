@@ -1,9 +1,9 @@
 out() ->
     receive
-        {out1, {A, B}} -> 
-            io:format("1: (~p, ~p)~n", [A, B]);
-        {out2, {A, B}} -> 
-            io:format("2: (~p, ~p)~n", [A, B])
+        {out1, {A, B}, Version} -> 
+            io:format("1: (~p, ~p) @ ~p~n", [A, B, Version]);
+        {out2, {A, B}, Version} -> 
+            io:format("2: (~p, ~p) @ ~p~n", [A, B, Version])
     end,
     out().
 
