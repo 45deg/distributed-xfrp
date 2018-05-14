@@ -106,7 +106,7 @@ let in_node deps (id, _) =
   "end,";
   id ^ "(Version + 1)."]
 
-let def_node xmod deps renv = 
+let def_node xmod deps renv debug_flg  = 
   let env = !renv in function
   | Node ((id, _), init, expr) -> 
     let dep = (try M.find id deps with Not_found -> (raise (UnknownId id))) in
@@ -120,6 +120,7 @@ let def_node xmod deps renv =
       (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
       (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
     id ^ "(Heap) ->\n" ^ 
+    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p)~n\", [Heap]),\n" else "") ^
     indent 1 "receive {Id,RValue,{RVId, RVersion}} ->\n" ^
     indent 2 "NewHeap = maps:update_with(case Id of \n" ^
       (concat_map ";\n" (indent 3) (
@@ -181,7 +182,7 @@ let out_func x = String.concat "\n" @@
     "out()."
   ]
 
-let of_xmodule x ti template = 
+let of_xmodule x ti template debug_flg = 
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
@@ -208,5 +209,5 @@ let of_xmodule x ti template =
       | None   -> [in_func x; out_func x])
     (* outfunc *)
     @ (List.map (in_node dep) x.in_node)
-    @ (let renv = ref env in List.map (def_node x dep renv) x.definition)
+    @ (let renv = ref env in List.map (def_node x dep renv debug_flg) x.definition)
   )

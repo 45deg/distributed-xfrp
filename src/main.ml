@@ -9,12 +9,14 @@ type mode =
 let output_file = ref None
 let input_file  = ref None
 let template_file = ref None
+let debug_mode = ref false
 let mode = ref Erlang
 
 let speclist = [
   ("-o", Arg.String(fun s -> output_file := Some(s)), "Write output to file.");
   ("-t", Arg.String(fun s -> template_file := Some(s)), "Template for I/O functions.");
   ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
+  ("-debug", Arg.Unit(fun _ -> debug_mode := true), "Output function trace (experimental)");
 ]
 
 let load_file f =
@@ -36,7 +38,7 @@ let compile in_c =
     match !mode with
       | Erlang ->
         let ti = Typing.type_module main in
-        Codegen.of_xmodule main ti template
+        Codegen.of_xmodule main ti template !debug_mode
       | Dot -> 
         Graphviz.of_xmodule main
   with 
