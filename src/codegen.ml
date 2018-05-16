@@ -89,7 +89,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}])),\n"
+      ^ "}, #{}, []])),\n"
   ) (M.bindings deps) in
   "main() -> \n" ^
   spawn ^
@@ -123,9 +123,10 @@ let def_node xmod deps renv debug_flg  =
     let newenv = env |> 
       (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
       (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
-    id ^ "(Heap, Last) ->\n" ^ 
-    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p)~n\", [Heap, Last]),\n" else "") ^
+    id ^ "(Heap, Last, Pending) ->\n" ^ 
+    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Pending]),\n" else "") ^
     indent 1 "receive {Id,RValue,{RVId, RVersion}} ->\n" ^
+    (if debug_flg then indent 2 "io:format(\"" ^ id ^ " receives (~p)~n\", [{Id,RValue,{RVId, RVersion}}]),\n" else "") ^
     indent 2 "NewHeap = maps:update_with(case Id of \n" ^
       (concat_map ";\n" (indent 3) (
         List.map (fun id -> id ^ " -> {RVId, RVersion}") dep.input_current @
@@ -134,8 +135,8 @@ let def_node xmod deps renv debug_flg  =
     indent 3 "end,\n" ^
     indent 3 "fun(M) -> M#{ Id => RValue } end,\n" ^
     indent 3 "#{ Id => RValue }, Heap),\n" ^
-    indent 2 "HL = lists:keysort(1, maps:to_list(NewHeap)),\n" ^
-    indent 2 "case lists:dropwhile(fun (L) -> case L of\n" ^
+    indent 2 "HL = lists:sort(?SORTHEAP, maps:to_list(NewHeap)),\n" ^
+    indent 2 "case lists_loop(fun (L) -> case L of\n" ^
     concat_map "" (fun (root, currents, lasts) ->
       let bind (cs, ls) = "#{" ^ String.concat ", " (
         List.map (fun id -> id ^ " := " ^ sig_var id) cs @
@@ -148,24 +149,27 @@ let def_node xmod deps renv debug_flg  =
       let body n =
         indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
         concat_map "" (indent n) (
-          List.map (fun i -> i ^ " ! {" ^ id ^ ", Curr, Version},\n") output
-    ) ^
-        indent n "false;\n"
+          List.map (fun i -> 
+            (* i ^ " ! {" ^ id ^ ", Curr, Version},\n" ^ *)
+            "lists:foreach(fun (V) -> " ^ i ^ " ! {" ^ id ^ ", Curr, V} end, [Version|Pending]),\n" ) output
+        ) ^
+        indent n "{break, {Version, Map}};\n"
       in
-      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ "} ->\n" ^
+      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
       match other_vars with
       | ([],[]) -> body 4
       | others ->
         indent 4 "case Last of\n" ^
 				indent 5 (bind others) ^ " -> \n" ^
         body 6 ^
-        indent 5 "_ -> false\n" ^
+        indent 5 "_ -> {break, {pend, Version, Map}}\n" ^
         indent 4 "end;\n"
     ) root_group ^
-    indent 3 "_ -> true\n" ^
+    indent 3 "_ -> continue\n" ^
     indent 2 "end end, HL) of\n" ^
-    indent 3 "[] -> " ^ id ^ "(NewHeap, Last);\n" ^
-    indent 3 "[{Key, M}|_] -> " ^ id ^ "(maps:remove(Key, NewHeap), maps:merge(Last, M))\n" ^
+    indent 3 "false -> " ^ id ^ "(NewHeap, Last, Pending);\n" ^
+    indent 3 "{pend,V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [V|Pending]);\n" ^
+    indent 3 "{V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [])\n" ^
     indent 2 "end\n" ^
     indent 1 "end."
   | Const ((id, _), e) -> 
@@ -190,7 +194,23 @@ let init_values x ti =
   in
   let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (Typeinfo.find i ti)) m) M.empty x.in_node in
   List.fold_left collect ins x.definition
- 
+
+let list_func = String.concat "\n" [
+  "lists_loop (Fun, [H|L]) ->";
+  indent 1 "case Fun(H) of";
+  indent 2 "{break, V} -> V;";
+  indent 2 "continue -> lists_loop(Fun, L)";
+  indent 1 "end;";
+  "lists_loop (_, []) -> false."
+]
+
+let sort_func = String.concat "\n" [
+  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
+  indent 1 "V1 == V2 -> K1 < K2;";
+  indent 1 "true -> V1 < V2";
+  "end end)."
+]
+
 let in_func x = String.concat "\n" @@
   "in() ->" :: List.map (indent 1) (
     "%fill here" ::
@@ -212,7 +232,7 @@ let of_xmodule x ti template debug_flg =
     [[("main", 0)]; [("in", 0); ("out", 0)];
      List.map (fun (i,_) -> (i, 1)) x.in_node;
      List.fold_left (fun l e -> match e with
-     | Node ((id, _), _, _) -> (id, 2) :: l
+     | Node ((id, _), _, _) -> (id, 3) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
      | _ -> l
      ) [] x.definition
@@ -227,6 +247,8 @@ let of_xmodule x ti template debug_flg =
   String.concat "\n\n" (
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
+    sort_func ::
+    list_func ::
     main dep x (init_values x ti) env ::
     (match template with
       | Some s -> [s]
