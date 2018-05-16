@@ -107,6 +107,9 @@ let in_node deps (id, _) =
   id ^ "(Version + 1)."]
 
 let def_node xmod deps renv debug_flg  = 
+
+
+
   let env = !renv in function
   | Node ((id, _), init, expr) -> 
     let dep = try_find id deps in
@@ -123,8 +126,8 @@ let def_node xmod deps renv debug_flg  =
     let newenv = env |> 
       (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
       (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
-    id ^ "(Heap, Last, Pending) ->\n" ^ 
-    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Pending]),\n" else "") ^
+    id ^ "(Heap, Last, Deferred) ->\n" ^ 
+    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Deferred]),\n" else "") ^
     indent 1 "receive {Id,RValue,{RVId, RVersion}} ->\n" ^
     (if debug_flg then indent 2 "io:format(\"" ^ id ^ " receives (~p)~n\", [{Id,RValue,{RVId, RVersion}}]),\n" else "") ^
     indent 2 "NewHeap = maps:update_with(case Id of \n" ^
@@ -151,7 +154,7 @@ let def_node xmod deps renv debug_flg  =
         concat_map "" (indent n) (
           List.map (fun i -> 
             (* i ^ " ! {" ^ id ^ ", Curr, Version},\n" ^ *)
-            "lists:foreach(fun (V) -> " ^ i ^ " ! {" ^ id ^ ", Curr, V} end, [Version|Pending]),\n" ) output
+            "lists:foreach(fun (V) -> " ^ i ^ " ! {" ^ id ^ ", Curr, V} end, [Version|Deferred]),\n" ) output
         ) ^
         indent n "{break, {Version, Map}};\n"
       in
@@ -167,8 +170,8 @@ let def_node xmod deps renv debug_flg  =
     ) root_group ^
     indent 3 "_ -> continue\n" ^
     indent 2 "end end, HL) of\n" ^
-    indent 3 "false -> " ^ id ^ "(NewHeap, Last, Pending);\n" ^
-    indent 3 "{pend,V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [V|Pending]);\n" ^
+    indent 3 "false -> " ^ id ^ "(NewHeap, Last, Deferred);\n" ^
+    indent 3 "{pend,V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [V|Deferred]);\n" ^
     indent 3 "{V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [])\n" ^
     indent 2 "end\n" ^
     indent 1 "end."
