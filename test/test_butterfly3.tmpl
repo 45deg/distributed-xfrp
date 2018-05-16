@@ -1,0 +1,16 @@
+out() ->
+    receive
+        {Source, {A, B, C}, Version} -> 
+            io:format("~p: (~p, ~p, ~p) @ ~p~n", [Source, A, B, C, Version])
+    end,
+    out().
+
+in() ->
+    {A, B, C} = {rand:uniform(9), rand:uniform(9), rand:uniform(9)},
+    io:format("Emit (~p, ~p, ~p)~n", [A, B, C]),
+    in1 ! A,
+    in2 ! B,
+    in3 ! C,
+    timer:sleep(1),
+    io:format("~n", []),
+    in().

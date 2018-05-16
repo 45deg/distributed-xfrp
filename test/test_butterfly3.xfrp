@@ -1,0 +1,18 @@
+module Butterfly3
+in
+  in1 : Int,
+  in2 : Int,
+  in3 : Int
+out 
+  out1 : Int,
+  out2 : Int,
+  out3 : Int
+use Std
+
+node a = in1 * 100 + in2 * 10 + in3
+node b = in2 * 100 + in3 * 10 + in1
+node c = in3 * 100 + in1 * 10 + in2
+
+node out1 = (a, b, c)
+node out2 = (a, b, c)
+node out3 = (a, b, c)
