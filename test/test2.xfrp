@@ -1,4 +1,4 @@
-module FanController # module name
+module test2 # module name
 in  tmp : Float,     # temperature sensor
     hmd : Float,     # humidity sensor
     pulse10ms : Bool # 10 ms interval timer

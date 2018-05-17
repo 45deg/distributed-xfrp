@@ -1,0 +1,12 @@
+out() ->
+    receive M ->
+            io:fwrite("~p\n", [M])
+    end,
+    out().
+
+in() ->
+    tmp ! rand:uniform() * 5 + 20,
+    hmd ! rand:uniform() * 50 + 50,
+    pulse10ms ! true,
+    timer:sleep(1000),
+    in().
