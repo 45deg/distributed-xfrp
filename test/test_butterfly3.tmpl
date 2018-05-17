@@ -11,6 +11,6 @@ in() ->
     in1 ! A,
     in2 ! B,
     in3 ! C,
-    timer:sleep(1),
+    timer:sleep(1000),
     io:format("~n", []),
     in().
