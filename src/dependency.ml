@@ -108,10 +108,7 @@ let get_graph xmodule =
       root = (try S.elements (M.find k root) with Not_found -> []);
     }
   )
-  (*M.add "out" (S.of_list (List.map fst xmodule.out_node)) |>
-  (fun m -> M.merge (fun k ao bo -> match ao, bo with (*
-    | Some(a), Some(b) -> Some({ input = a; outs = b; root = [] })
-    | None, Some(b) -> Some({ ins = S.empty; outs = b})
-    | Some(a), None -> Some({ ins = a; outs = S.empty})*)
-    | _, _ -> None
-  ) m (rev_map m))*)
+
+let is_lazy node = match node.input_current with
+  | [] -> true
+  | _ -> false

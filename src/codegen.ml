@@ -85,9 +85,9 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
-      let init = init_map node in
+      let (init, fun_id) = if is_lazy node then ("{}", id ^ "_init") else (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
-      "spawn(?MODULE, " ^ id ^ ", [#{" ^
+      "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
       ^ "}, #{}, []])),\n"
   ) (M.bindings deps) in
@@ -106,10 +106,7 @@ let in_node deps (id, _) =
   "end,";
   id ^ "(Version + 1)."]
 
-let def_node xmod deps renv debug_flg  = 
-
-
-
+let def_node xmod deps inits renv debug_flg  = 
   let env = !renv in function
   | Node ((id, _), init, expr) -> 
     let dep = try_find id deps in
@@ -126,9 +123,25 @@ let def_node xmod deps renv debug_flg  =
     let newenv = env |> 
       (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
       (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
+    let bind (cs, ls) = "#{" ^ String.concat ", " (
+      List.map (fun id -> id ^ " := " ^ sig_var id) cs @
+      List.map (fun id -> id ^ " := " ^ last_sig_var id) ls)
+    ^ "}" in
+    (* init function *)
+    (if is_lazy dep then
+      let vals = List.map (fun id -> try_find id inits |> erlang_of_expr env) dep.input_last in
+      id ^ "_init(Heap, Last, Deferred) ->\n" ^
+      indent 1 "{" ^ concat_map "," last_sig_var dep.input_last ^ "} = {" ^ String.concat "," vals ^ "},\n" ^
+      indent 1 "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
+      concat_map "" (fun i -> indent 1 i ^ " ! {init, " ^ id ^ ", Curr},\n") output ^
+      indent 1 id ^ "(Heap, Last, Deferred).\n\n"
+    else "") ^ 
+    (* main node function *)
     id ^ "(Heap, Last, Deferred) ->\n" ^ 
     (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Deferred]),\n" else "") ^
-    indent 1 "receive {Id,RValue,{RVId, RVersion}} ->\n" ^
+    indent 1 "receive\n" ^
+    indent 1 "{init,RVId,RValue} -> " ^ id ^ "(maps:map(fun (_,M) -> M#{ RVId => RValue } end,Heap), Last, Deferred);\n" ^
+    indent 1 "{Id,RValue,{RVId, RVersion}} ->\n" ^
     (if debug_flg then indent 2 "io:format(\"" ^ id ^ " receives (~p)~n\", [{Id,RValue,{RVId, RVersion}}]),\n" else "") ^
     indent 2 "NewHeap = maps:update_with(case Id of \n" ^
       (concat_map ";\n" (indent 3) (
@@ -141,10 +154,6 @@ let def_node xmod deps renv debug_flg  =
     indent 2 "HL = lists:sort(?SORTHEAP, maps:to_list(NewHeap)),\n" ^
     indent 2 "case lists_loop(fun (L) -> case L of\n" ^
     concat_map "" (fun (root, currents, lasts) ->
-      let bind (cs, ls) = "#{" ^ String.concat ", " (
-        List.map (fun id -> id ^ " := " ^ sig_var id) cs @
-        List.map (fun id -> id ^ " := " ^ last_sig_var id) ls)
-      ^ "}" in
       let other_vars =
         let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
         (sub dep.input_current currents, sub dep.input_last lasts)
@@ -235,7 +244,9 @@ let of_xmodule x ti template debug_flg =
     [[("main", 0)]; [("in", 0); ("out", 0)];
      List.map (fun (i,_) -> (i, 1)) x.in_node;
      List.fold_left (fun l e -> match e with
-     | Node ((id, _), _, _) -> (id, 3) :: l
+     | Node ((id, _), _, _) -> 
+      if is_lazy (try_find id dep) then (id ^ "_init", 3) :: (id, 3) :: l
+      else (id, 3) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
      | _ -> l
      ) [] x.definition
@@ -247,16 +258,18 @@ let of_xmodule x ti template debug_flg =
   let env = M.bindings dep
             |> List.fold_left (fun env (id, _) -> M.add id (last_sig_var id) env) M.empty
   in
+  let inits = (init_values x ti) in
   String.concat "\n\n" (
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
+    (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
     sort_func ::
     list_func ::
-    main dep x (init_values x ti) env ::
+    main dep x inits env ::
     (match template with
       | Some s -> [s]
       | None   -> [in_func x; out_func x])
     (* outfunc *)
     @ (List.map (in_node dep) x.in_node)
-    @ (let renv = ref env in List.map (def_node x dep renv debug_flg) x.definition)
+    @ (let renv = ref env in List.map (def_node x dep inits renv debug_flg) x.definition)
   )
