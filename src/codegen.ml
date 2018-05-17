@@ -207,20 +207,21 @@ let init_values x ti =
   let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (Typeinfo.find i ti)) m) M.empty x.in_node in
   List.fold_left collect ins x.definition
 
-let list_func = String.concat "\n" [
+let lib_funcs = String.concat "\n" [
+  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
+  indent 1 "V1 == V2 -> K1 < K2;";
+  indent 1 "true -> V1 < V2";
+  "end end).";
   "lists_loop (Fun, [H|L]) ->";
   indent 1 "case Fun(H) of";
   indent 2 "{break, V} -> V;";
   indent 2 "continue -> lists_loop(Fun, L)";
   indent 1 "end;";
-  "lists_loop (_, []) -> false."
-]
-
-let sort_func = String.concat "\n" [
-  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
-  indent 1 "V1 == V2 -> K1 < K2;";
-  indent 1 "true -> V1 < V2";
-  "end end)."
+  "lists_loop (_, []) -> false.";
+  "heap_update([], _, _, Heap)	-> Heap;";
+  "heap_update([Key|Rest], Id, Value, Heap) ->";
+	"heap_update(Rest, Id, Value,";
+	indent 1 "maps:update_with(Key, fun(M) -> M#{ Id => Value } end, #{ Id => Value }, Heap))."
 ]
 
 let in_func x = String.concat "\n" @@
@@ -263,8 +264,7 @@ let of_xmodule x ti template debug_flg =
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
-    sort_func ::
-    list_func ::
+    lib_funcs ::
     main dep x inits env ::
     (match template with
       | Some s -> [s]
