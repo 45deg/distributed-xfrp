@@ -5,5 +5,5 @@ out
   fib : Int
 use Std
 
-node init[0] fibDelay = fib@last
-node init[1] fib : Int = case pulse of () -> fib@last + fibDelay@last;
+node init[1] fibDelay = fib@last
+node init[0] fib : Int = case pulse of () -> fib@last + fibDelay@last;
