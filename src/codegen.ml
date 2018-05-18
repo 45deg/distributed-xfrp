@@ -85,7 +85,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
-      let (init, fun_id) = if node.is_lazy then ("{}", id ^ "_init") else (init_map node, id) in
+      let (init, fun_id) = if node.is_lazy then ("#{}", id ^ "_init") else (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
