@@ -1,0 +1,18 @@
+module Lazy
+in
+  a : Int,
+  b : Int
+out 
+  o1 : Int,
+  o2 : Int
+use Std
+
+node x = o1@last
+node y = o1
+
+node l1 = l2@last
+node l2 = l3@last
+node l3 = a@last
+
+node o1 = x + x@last + y@last + a + b
+node o2 = l1@last
