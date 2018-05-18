@@ -121,9 +121,9 @@ let def_node xmod deps inits renv debug_flg  =
     let output = if List.exists (fun (i, _) -> compare i id == 0) xmod.out_node then "out" :: dep.output
                  else dep.output in
     let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
-    let bind underscore (cs, ls) = "#{" ^ String.concat ", " (
-      List.map (fun id -> id ^ " := " ^ if underscore then "_" else sig_var id) cs @
-      List.map (fun id -> "{last, " ^ id ^ "} := " ^ if underscore then "_" else last_sig_var id) ls)
+    let bind (cs, ls) = "#{" ^ String.concat ", " (
+      List.map (fun id -> id ^ " := " ^ sig_var id) cs @
+      List.map (fun id -> "{last, " ^ id ^ "} := " ^ last_sig_var id) ls)
     ^ "}" in
     let update n =
       indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
@@ -136,36 +136,36 @@ let def_node xmod deps inits renv debug_flg  =
       indent n "end, [Version|Deferred]),\n"
     in
     (* main node function *)
-    id ^ "(Heap, Last, Deferred) ->\n" ^ 
-    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Deferred]),\n" else "") ^
-    indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap)),\n" ^
-    indent 1 "{NHeap, NLast, NDeferred} = case lists_loop(fun (L) -> case L of\n" ^
+    id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
+    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
+    indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
+    indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+    indent 2 "case E of\n" ^
     concat_map "" (fun (root, currents, lasts) ->
       let other_vars =
         let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
         (sub dep.input_current currents, sub dep.input_last lasts)
       in
-      indent 2 "{ {" ^ root ^ ", _} = Version, " ^ bind true (currents, lasts) ^ " = Map} ->\n" ^
+      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
       match other_vars with
-      | ([],[]) -> indent 4 "{break, {go, Map, Version, Map}};\n"
+      | ([],[]) -> 
+        update 4 ^
+        indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
       | others ->
-        indent 3 "case Last of\n" ^
-				indent 4 (bind true others) ^ " = LMap -> {break, {go, maps:merge(Map, LMap), Version, Map}};\n" ^
-        indent 4 "_ -> {break, {pend, Version, Map}}\n" ^
-        indent 3 "end;\n"
+        indent 4 "case Last of\n" ^
+				indent 5 (bind others) ^ " -> \n" ^
+        update 6 ^
+        indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
+        indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
+        indent 4 "end;\n"
     ) root_group ^
-    indent 2 "_ -> continue\n" ^
-    indent 1 "end end, HL) of\n" ^
-    indent 2 "false -> {Heap, Last, Deferred};\n" ^
-    indent 2 "{pend,Version,M} -> {maps:remove(Version, Heap), maps:merge(Last, M), [Version|Deferred]};\n" ^
-    indent 2 "{go," ^ (bind false (dep.input_current, dep.input_last)) ^ ", Version, M} -> \n" ^ 
-    update 3 ^
-    indent 2 "{maps:remove(Version, Heap), maps:merge(Last, M), []}\n" ^
-    indent 1 "end,\n" ^
-    indent 1 "Received = receive {_,_,{_, _}} = Data -> Data end,\n" ^
+    indent 3 "_ -> {Heap, Last, Deferred}\n" ^
+    indent 2 "end\n" ^
+    indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+    indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
     (if debug_flg then indent 1 "io:format(\"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
     indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-             "], Received, NHeap), NLast, NDeferred)."
+             "], Received, NHeap), NLast, NDeferred).\n"
   | Const ((id, _), e) -> 
     renv := M.add id ("?" ^ const id) env;
     "-define(" ^ const id ^ ", " ^ erlang_of_expr env e ^ ")."
@@ -194,12 +194,6 @@ let lib_funcs = String.concat "\n" [
   indent 1 "V1 == V2 -> K1 < K2;";
   indent 1 "true -> V1 < V2";
   "end end).";
-  "lists_loop (Fun, [H|L]) ->";
-  indent 1 "case Fun(H) of";
-  indent 2 "{break, V} -> V;";
-  indent 2 "continue -> lists_loop(Fun, L)";
-  indent 1 "end;";
-  "lists_loop (_, []) -> false.";
   "heap_update(Current, Last, {Id, RValue, {RVId, RVersion}}, Heap) ->";
   indent 1 "H1 = case lists:member(Id, Current) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Heap);";
