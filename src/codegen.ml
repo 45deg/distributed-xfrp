@@ -78,7 +78,7 @@ let erlang_of_expr env e =
 let main deps xmod inits env = 
   let init i = try_find i inits |> erlang_of_expr env in
   let init_map node = "#{" ^ 
-    concat_map ", " (fun i -> i ^ " => " ^ init i) node.input_last
+    concat_map ", " (fun i -> "{last, " ^ i ^ "} => " ^ init i) node.input_last
   ^ "}" in
   let spawn = concat_map "" (fun (id, node) ->
     if List.exists (fun (i, _) -> compare i id == 0) xmod.in_node then
@@ -123,7 +123,7 @@ let def_node xmod deps inits renv debug_flg  =
     let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
     let bind (cs, ls) = "#{" ^ String.concat ", " (
       List.map (fun id -> id ^ " := " ^ sig_var id) cs @
-      List.map (fun id -> id ^ " := " ^ last_sig_var id) ls)
+      List.map (fun id -> "{last, " ^ id ^ "} := " ^ last_sig_var id) ls)
     ^ "}" in
     (* init function *)
     (if is_lazy dep then
@@ -141,14 +141,8 @@ let def_node xmod deps inits renv debug_flg  =
     indent 1 "{init,RVId,RValue} -> " ^ id ^ "(maps:map(fun (_,M) -> M#{ RVId => RValue } end,Heap), Last, Deferred);\n" ^
     indent 1 "{Id,RValue,{RVId, RVersion}} ->\n" ^
     (if debug_flg then indent 2 "io:format(\"" ^ id ^ " receives (~p)~n\", [{Id,RValue,{RVId, RVersion}}]),\n" else "") ^
-    indent 2 "NewHeap = maps:update_with(case Id of \n" ^
-      (concat_map ";\n" (indent 3) (
-        List.map (fun id -> id ^ " -> {RVId, RVersion}") dep.input_current @
-        List.map (fun id -> id ^ " -> {RVId, RVersion + 1}") dep.input_last
-      )) ^ "\n" ^
-    indent 3 "end,\n" ^
-    indent 3 "fun(M) -> M#{ Id => RValue } end,\n" ^
-    indent 3 "#{ Id => RValue }, Heap),\n" ^
+    indent 2 "NewHeap = heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+             "], {Id,RValue,{RVId, RVersion}}, Heap),\n" ^
     indent 2 "HL = lists:sort(?SORTHEAP, maps:to_list(NewHeap)),\n" ^
     indent 2 "case lists_loop(fun (L) -> case L of\n" ^
     concat_map "" (fun (root, currents, lasts) ->
@@ -216,10 +210,15 @@ let lib_funcs = String.concat "\n" [
   indent 2 "continue -> lists_loop(Fun, L)";
   indent 1 "end;";
   "lists_loop (_, []) -> false.";
-  "heap_update([], _, _, Heap)	-> Heap;";
-  "heap_update([Key|Rest], Id, Value, Heap) ->";
-	"heap_update(Rest, Id, Value,";
-	indent 1 "maps:update_with(Key, fun(M) -> M#{ Id => Value } end, #{ Id => Value }, Heap))."
+  "heap_update(Current, Last, {Id, RValue, {RVId, RVersion}}, Heap) ->";
+  indent 1 "H1 = case lists:member(Id, Current) of";
+  indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Heap);";
+  indent 2 "false -> Heap";
+  indent 1 "end,";
+	indent 1 "case lists:member(Id, Last) of";
+  indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
+  indent 2 "false -> H1";
+  indent 1 "end."
 ]
 
 let in_func x = String.concat "\n" @@
