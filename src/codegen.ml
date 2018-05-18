@@ -85,7 +85,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
-      let (init, fun_id) = if node.is_lazy then ("#{}", id ^ "_init") else (init_map node, id) in
+      let (init, fun_id) = (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
@@ -135,49 +135,37 @@ let def_node xmod deps inits renv debug_flg  =
       ) ^ "\n" ^
       indent n "end, [Version|Deferred]),\n"
     in
-    (* init function *)
-    (if dep.is_lazy then
-      let vals = List.map (fun id -> try_find id inits |> erlang_of_expr env) dep.input_last in
-      id ^ "_init(Heap, Last, Deferred) ->\n" ^
-      indent 1 "{" ^ concat_map "," last_sig_var dep.input_last ^ "} = {" ^ String.concat "," vals ^ "},\n" ^
-      indent 1 "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
-      concat_map "" (fun i -> indent 1 i ^ " ! {init, " ^ id ^ ", Curr},\n") output ^
-      indent 1 id ^ "(Heap, Last, Deferred).\n\n"
-    else "") ^ 
     (* main node function *)
     id ^ "(Heap, Last, Deferred) ->\n" ^ 
     (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap, Last, Deferred]),\n" else "") ^
-    indent 1 "receive\n" ^
-    indent 1 "{init,RVId,RValue} -> " ^ id ^ "(maps:map(fun (_,M) -> M#{ RVId => RValue } end,Heap), Last, Deferred);\n" ^
-    indent 1 "{Id,RValue,{RVId, RVersion}} ->\n" ^
-    (if debug_flg then indent 2 "io:format(\"" ^ id ^ " receives (~p)~n\", [{Id,RValue,{RVId, RVersion}}]),\n" else "") ^
-    indent 2 "NewHeap = heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-             "], {Id,RValue,{RVId, RVersion}}, Heap),\n" ^
-    indent 2 "HL = lists:sort(?SORTHEAP, maps:to_list(NewHeap)),\n" ^
-    indent 2 "case lists_loop(fun (L) -> case L of\n" ^
+    indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap)),\n" ^
+    indent 1 "{NHeap, NLast, NDeferred} = case lists_loop(fun (L) -> case L of\n" ^
     concat_map "" (fun (root, currents, lasts) ->
       let other_vars =
         let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
         (sub dep.input_current currents, sub dep.input_last lasts)
       in
-      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind true (currents, lasts) ^ " = Map} ->\n" ^
+      indent 2 "{ {" ^ root ^ ", _} = Version, " ^ bind true (currents, lasts) ^ " = Map} ->\n" ^
       match other_vars with
       | ([],[]) -> indent 4 "{break, {go, Map, Version, Map}};\n"
       | others ->
-        indent 4 "case Last of\n" ^
-				indent 5 (bind true others) ^ " = LMap -> {break, {go, maps:merge(Map, LMap), Version, Map}};\n" ^
-        indent 5 "_ -> {break, {pend, Version, Map}}\n" ^
-        indent 4 "end;\n"
+        indent 3 "case Last of\n" ^
+				indent 4 (bind true others) ^ " = LMap -> {break, {go, maps:merge(Map, LMap), Version, Map}};\n" ^
+        indent 4 "_ -> {break, {pend, Version, Map}}\n" ^
+        indent 3 "end;\n"
     ) root_group ^
-    indent 3 "_ -> continue\n" ^
-    indent 2 "end end, HL) of\n" ^
-    indent 3 "false -> " ^ id ^ "(NewHeap, Last, Deferred);\n" ^
-    indent 3 "{pend,Version,M} -> " ^ id ^ "(maps:remove(Version, NewHeap), maps:merge(Last, M), [Version|Deferred]);\n" ^
-    indent 3 "{go," ^ (bind false (dep.input_current, dep.input_last)) ^ ", Version, M} -> \n" ^ 
-    update 4 ^
-    indent 3 id ^ "(maps:remove(Version, NewHeap), maps:merge(Last, M), [])\n" ^
-    indent 2 "end\n" ^
-    indent 1 "end."
+    indent 2 "_ -> continue\n" ^
+    indent 1 "end end, HL) of\n" ^
+    indent 2 "false -> {Heap, Last, Deferred};\n" ^
+    indent 2 "{pend,Version,M} -> {maps:remove(Version, Heap), maps:merge(Last, M), [Version|Deferred]};\n" ^
+    indent 2 "{go," ^ (bind false (dep.input_current, dep.input_last)) ^ ", Version, M} -> \n" ^ 
+    update 3 ^
+    indent 2 "{maps:remove(Version, Heap), maps:merge(Last, M), []}\n" ^
+    indent 1 "end,\n" ^
+    indent 1 "Received = receive {_,_,{_, _}} = Data -> Data end,\n" ^
+    (if debug_flg then indent 1 "io:format(\"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
+    indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+             "], Received, NHeap), NLast, NDeferred)."
   | Const ((id, _), e) -> 
     renv := M.add id ("?" ^ const id) env;
     "-define(" ^ const id ^ ", " ^ erlang_of_expr env e ^ ")."
@@ -245,8 +233,7 @@ let of_xmodule x ti template debug_flg =
      List.map (fun (i,_) -> (i, 1)) x.in_node;
      List.fold_left (fun l e -> match e with
      | Node ((id, _), _, _) -> 
-      if (try_find id dep).is_lazy then (id ^ "_init", 3) :: (id, 3) :: l
-      else (id, 3) :: l
+      (id, 3) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
      | _ -> l
      ) [] x.definition
