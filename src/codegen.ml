@@ -30,7 +30,7 @@ let erlang_of_expr env e =
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
     | EConst (CChar c) -> "?" ^ Char.escaped c
     | EId id -> try_find id env
-    | EAnnot (id, ALast) -> try_find id env
+    | EAnnot (id, ALast) -> "L" ^ try_find id env
     | EApp (id, es) -> (* workaround *)
       id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
@@ -120,9 +120,7 @@ let def_node xmod deps inits renv debug_flg  =
                            , List.filter (is_root r) dep.input_last)) dep.root in
     let output = if List.exists (fun (i, _) -> compare i id == 0) xmod.out_node then "out" :: dep.output
                  else dep.output in
-    let newenv = env |> 
-      (fun e -> List.fold_left (fun m i -> M.add i (sig_var i) m) e dep.input_current) |>
-      (fun e -> List.fold_left (fun m i -> M.add i (last_sig_var i) m) e dep.input_last) in
+    let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
     let bind (cs, ls) = "#{" ^ String.concat ", " (
       List.map (fun id -> id ^ " := " ^ sig_var id) cs @
       List.map (fun id -> id ^ " := " ^ last_sig_var id) ls)
