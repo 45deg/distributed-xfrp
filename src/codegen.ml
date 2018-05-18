@@ -85,7 +85,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
-      let (init, fun_id) = if is_lazy node then ("{}", id ^ "_init") else (init_map node, id) in
+      let (init, fun_id) = if node.is_lazy then ("{}", id ^ "_init") else (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
@@ -121,12 +121,22 @@ let def_node xmod deps inits renv debug_flg  =
     let output = if List.exists (fun (i, _) -> compare i id == 0) xmod.out_node then "out" :: dep.output
                  else dep.output in
     let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
-    let bind (cs, ls) = "#{" ^ String.concat ", " (
-      List.map (fun id -> id ^ " := " ^ sig_var id) cs @
-      List.map (fun id -> "{last, " ^ id ^ "} := " ^ last_sig_var id) ls)
+    let bind underscore (cs, ls) = "#{" ^ String.concat ", " (
+      List.map (fun id -> id ^ " := " ^ if underscore then "_" else sig_var id) cs @
+      List.map (fun id -> "{last, " ^ id ^ "} := " ^ if underscore then "_" else last_sig_var id) ls)
     ^ "}" in
+    let update n =
+      indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
+      indent n "lists:foreach(fun (V) -> \n" ^
+      concat_map ",\n" (indent (n + 1)) (
+        List.map (fun i -> 
+          (* i ^ " ! {" ^ id ^ ", Curr, Version},\n" ^ *)
+          i ^ " ! {" ^ id ^ ", Curr, V}" ) output
+      ) ^ "\n" ^
+      indent n "end, [Version|Deferred]),\n"
+    in
     (* init function *)
-    (if is_lazy dep then
+    (if dep.is_lazy then
       let vals = List.map (fun id -> try_find id inits |> erlang_of_expr env) dep.input_last in
       id ^ "_init(Heap, Last, Deferred) ->\n" ^
       indent 1 "{" ^ concat_map "," last_sig_var dep.input_last ^ "} = {" ^ String.concat "," vals ^ "},\n" ^
@@ -150,30 +160,22 @@ let def_node xmod deps inits renv debug_flg  =
         let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
         (sub dep.input_current currents, sub dep.input_last lasts)
       in
-      let body n =
-        indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
-        concat_map "" (indent n) (
-          List.map (fun i -> 
-            (* i ^ " ! {" ^ id ^ ", Curr, Version},\n" ^ *)
-            "lists:foreach(fun (V) -> " ^ i ^ " ! {" ^ id ^ ", Curr, V} end, [Version|Deferred]),\n" ) output
-        ) ^
-        indent n "{break, {Version, Map}};\n"
-      in
-      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
+      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind true (currents, lasts) ^ " = Map} ->\n" ^
       match other_vars with
-      | ([],[]) -> body 4
+      | ([],[]) -> indent 4 "{break, {go, Map, Version, Map}};\n"
       | others ->
         indent 4 "case Last of\n" ^
-				indent 5 (bind others) ^ " -> \n" ^
-        body 6 ^
+				indent 5 (bind true others) ^ " = LMap -> {break, {go, maps:merge(Map, LMap), Version, Map}};\n" ^
         indent 5 "_ -> {break, {pend, Version, Map}}\n" ^
         indent 4 "end;\n"
     ) root_group ^
     indent 3 "_ -> continue\n" ^
     indent 2 "end end, HL) of\n" ^
     indent 3 "false -> " ^ id ^ "(NewHeap, Last, Deferred);\n" ^
-    indent 3 "{pend,V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [V|Deferred]);\n" ^
-    indent 3 "{V,M} -> " ^ id ^ "(maps:remove(V, NewHeap), maps:merge(Last, M), [])\n" ^
+    indent 3 "{pend,Version,M} -> " ^ id ^ "(maps:remove(Version, NewHeap), maps:merge(Last, M), [Version|Deferred]);\n" ^
+    indent 3 "{go," ^ (bind false (dep.input_current, dep.input_last)) ^ ", Version, M} -> \n" ^ 
+    update 4 ^
+    indent 3 id ^ "(maps:remove(Version, NewHeap), maps:merge(Last, M), [])\n" ^
     indent 2 "end\n" ^
     indent 1 "end."
   | Const ((id, _), e) -> 
@@ -243,7 +245,7 @@ let of_xmodule x ti template debug_flg =
      List.map (fun (i,_) -> (i, 1)) x.in_node;
      List.fold_left (fun l e -> match e with
      | Node ((id, _), _, _) -> 
-      if is_lazy (try_find id dep) then (id ^ "_init", 3) :: (id, 3) :: l
+      if (try_find id dep).is_lazy then (id ^ "_init", 3) :: (id, 3) :: l
       else (id, 3) :: l
      | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
      | _ -> l

@@ -22,6 +22,7 @@ type dependency = {
   input_last: id list;
   root: id list;
   output: id list;
+  is_lazy: bool
 }
 
 let string_of_graph graph = 
@@ -101,14 +102,14 @@ let get_graph xmodule =
   List.fold_left (fun m (i, _) -> M.add i ES.empty m) ins xmodule.in_node |>
   M.mapi (fun k i -> 
     let (cur, last) = partition (ES.elements i) in
+    let output = try S.elements (M.find k rev) with Not_found -> [] in
     { 
       input_current = cur;
       input_last = last;
-      output = (try S.elements (M.find k rev) with Not_found -> []);
+      output = output;
       root = (try S.elements (M.find k root) with Not_found -> []);
+      is_lazy = match cur with
+        | [] -> true
+        | _ -> false
     }
   )
-
-let is_lazy node = match node.input_current with
-  | [] -> true
-  | _ -> false
