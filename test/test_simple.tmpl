@@ -1,0 +1,9 @@
+out() ->
+    receive M -> io:format("~p ~n",[M]) end,
+    out().
+
+in() ->
+    num ! 1,
+    timer:sleep(1000),
+    io:format("~n", []),
+    in().
