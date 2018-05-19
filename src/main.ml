@@ -10,13 +10,15 @@ let output_file = ref None
 let input_file  = ref None
 let template_file = ref None
 let debug_mode = ref false
+let mess = ref None
 let mode = ref Erlang
 
 let speclist = [
   ("-o", Arg.String(fun s -> output_file := Some(s)), "Write output to file.");
   ("-t", Arg.String(fun s -> template_file := Some(s)), "Template for I/O functions.");
   ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
-  ("-debug", Arg.Unit(fun _ -> debug_mode := true), "Output function trace (experimental)");
+  ("-debug", Arg.Unit(fun _ -> debug_mode := true), "(experimental) Output function trace");
+  ("-mess", Arg.Int(fun n -> mess := Some(n)), "(experimental) Let sending message delayed randomly (0-N ms)")
 ]
 
 let load_file f =
@@ -38,7 +40,7 @@ let compile in_c =
     match !mode with
       | Erlang ->
         let ti = Typing.type_module main in
-        Codegen.of_xmodule main ti template !debug_mode
+        Codegen.of_xmodule main ti template (!debug_mode, !mess)
       | Dot -> 
         Graphviz.of_xmodule main
   with 

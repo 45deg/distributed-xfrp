@@ -17,6 +17,11 @@ let sig_var s = "S" ^ s
 let last_sig_var s = "LS" ^ s
 let at_last var = if var.[0] == 'S' then "L" ^ var else var
 
+let mess = ref None
+let send i e = match !mess with
+  | None   -> i ^ " ! " ^ e
+  | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ i ^ ", " ^ e ^ ")"
+
 let concat_map s f l = String.concat s (List.map f l)
 let indent n s = String.make n '\t' ^ s
 
@@ -102,7 +107,7 @@ let in_node deps (id, _) =
   "receive";
   "Value ->";
     (try_find id deps).output |>
-    concat_map ",\n\t" (fun s -> indent 1 s ^ " ! {" ^ id ^ ", Value, {" ^ id ^ ", Version}}");
+    concat_map ",\n\t" (fun s -> indent 1 (send s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}")));
   "end,";
   id ^ "(Version + 1)."]
 
@@ -129,9 +134,7 @@ let def_node xmod deps inits renv debug_flg  =
       indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
       indent n "lists:foreach(fun (V) -> \n" ^
       concat_map ",\n" (indent (n + 1)) (
-        List.map (fun i -> 
-          (* i ^ " ! {" ^ id ^ ", Curr, Version},\n" ^ *)
-          i ^ " ! {" ^ id ^ ", Curr, V}" ) output
+        List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
       ) ^ "\n" ^
       indent n "end, [Version|Deferred]),\n"
     in
@@ -220,7 +223,8 @@ let out_func x = String.concat "\n" @@
     "out()."
   ]
 
-let of_xmodule x ti template debug_flg = 
+let of_xmodule x ti template (debug_flg, _mess) = 
+  mess := _mess;
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
