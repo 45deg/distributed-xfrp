@@ -34,31 +34,33 @@ let string_of_graph graph =
   String.concat "\n"
 
 let get_graph xmodule = 
-  let rec extract = function
-    | EConst _ -> ES.empty
-    | EId id -> ES.singleton (Current id)
-    | EAnnot (id, _) -> ES.singleton (Last id)
-    | EApp (id, es) -> List.map extract es |> List.fold_left ES.union ES.empty
-    | EBin (_, e1, e2) -> ES.union (extract e1) (extract e2)
-    | EUni (op, e) -> extract e
-    | ELet (binders, expr) ->
-      let (outer, inner) = List.fold_left (fun (outer, inner) (i, e, _) -> 
-        (ES.union (extract e) outer, ES.remove (Current i) inner)
-      ) (ES.empty, extract expr) binders 
-      in ES.union outer inner
-    | EIf(c, a, b) -> ES.union (extract c) (ES.union (extract a) (extract b))
-    | ETuple es -> List.map extract es |> List.fold_left ES.union ES.empty
-    | EFun (args, e) -> 
-      ES.diff (extract e) (ES.of_list (List.map (fun a -> Current a) args))
-    | ECase(m, list) -> (extract m :: List.map (fun (_, e) -> extract e) list) |> List.fold_left ES.union ES.empty
+  let extract nodes = 
+    let rec f = function
+      | EConst _ -> ES.empty
+      | EId id -> if S.mem id nodes then ES.singleton (Current id) else ES.empty
+      | EAnnot (id, _) -> ES.singleton (Last id) (* TODO: Check id is in nodes *)
+      | EApp (id, es) -> List.map f es |> List.fold_left ES.union ES.empty
+      | EBin (_, e1, e2) -> ES.union (f e1) (f e2)
+      | EUni (op, e) -> f e
+      | ELet (binders, expr) ->
+        let (outer, inner) = List.fold_left (fun (outer, inner) (i, e, _) -> 
+          (ES.union (f e) outer, ES.remove (Current i) inner)
+        ) (ES.empty, f expr) binders 
+        in ES.union outer inner
+      | EIf(c, a, b) -> ES.union (f c) (ES.union (f a) (f b))
+      | ETuple es -> List.map f es |> List.fold_left ES.union ES.empty
+      | EFun (args, e) -> 
+        ES.diff (f e) (ES.of_list (List.map (fun a -> Current a) args))
+      | ECase(m, list) -> (f m :: List.map (fun (_, e) -> f e) list) |> List.fold_left ES.union ES.empty
+    in f
   in
   let rec collect result = function
     | [] -> result
     | (Node ((dst, _), _, e)) :: xs -> 
-      collect (M.add dst ((extract e)) result) xs 
+      collect (M.add dst e result) xs 
     | _ :: xs -> collect result xs
   in
-  let rev_map m =
+  let inv_map m =
     M.fold (fun src -> 
       ES.fold (function | Current dst | Last dst ->
         M.update dst (function
@@ -75,14 +77,16 @@ let get_graph xmodule =
       | Last i :: xs -> f (cs, i :: ls) xs
     in f ([], [])
   in
-  let ins = collect M.empty xmodule.definition in
-  let rev = rev_map ins in
+  let nodes = collect M.empty xmodule.definition in
+  let in_ids = S.of_list (List.map fst (M.bindings nodes) @ List.map fst xmodule.in_node) in
+  let ins = M.map (extract in_ids) nodes in
+  let inv = inv_map ins in
   let root = List.fold_left (fun m (in_name, _) ->
     let ancestors name = 
       let rec f visited name =
         if S.mem name visited then S.empty else
         try 
-          let out = (M.find name rev) in
+          let out = (M.find name inv) in
           S.fold (fun n -> 
             S.union (f (S.add name visited) n)
           ) out out
@@ -101,7 +105,7 @@ let get_graph xmodule =
   List.fold_left (fun m (i, _) -> M.add i ES.empty m) ins xmodule.in_node |>
   M.mapi (fun k i -> 
     let (cur, last) = partition (ES.elements i) in
-    let output = try S.elements (M.find k rev) with Not_found -> [] in
+    let output = try S.elements (M.find k inv) with Not_found -> [] in
     { 
       input_current = cur;
       input_last = last;
