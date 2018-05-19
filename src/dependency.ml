@@ -21,8 +21,7 @@ type dependency = {
   input_current: id list;
   input_last: id list;
   root: id list;
-  output: id list;
-  is_lazy: bool
+  output: id list
 }
 
 let string_of_graph graph = 
@@ -107,9 +106,6 @@ let get_graph xmodule =
       input_current = cur;
       input_last = last;
       output = output;
-      root = (try S.elements (M.find k root) with Not_found -> []);
-      is_lazy = match cur with
-        | [] -> true
-        | _ -> false
+      root = (try S.elements (M.find k root) with Not_found -> [])
     }
   )
