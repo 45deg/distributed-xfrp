@@ -36,13 +36,14 @@ let compile in_c =
   in
   let lexbuf = from_channel in_c in
   try
-    let main = Parser.prog_module Lexer.read lexbuf in
+    let program = Parser.prog_module Lexer.read lexbuf in
+    let xmod = Module.of_program program in
     match !mode with
       | Erlang ->
-        let ti = Typing.type_module main in
-        Codegen.of_xmodule main ti template (!debug_mode, !mess)
+        let ti = Typing.type_module xmod in
+        Codegen.of_xmodule xmod ti template (!debug_mode, !mess)
       | Dot -> 
-        Graphviz.of_xmodule main
+        Graphviz.of_xmodule xmod
   with 
   | Lexer.Error msg ->
     raise (CompileError("Lexing error: " ^ msg))
