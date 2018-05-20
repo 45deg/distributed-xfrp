@@ -1,4 +1,5 @@
 open Syntax
+open Module
 
 type element = 
     Current of id
@@ -54,12 +55,6 @@ let get_graph xmodule =
       | ECase(m, list) -> (f m :: List.map (fun (_, e) -> f e) list) |> List.fold_left ES.union ES.empty
     in f
   in
-  let rec collect result = function
-    | [] -> result
-    | (Node ((dst, _), _, e)) :: xs -> 
-      collect (M.add dst e result) xs 
-    | _ :: xs -> collect result xs
-  in
   let inv_map m =
     M.fold (fun src -> 
       ES.fold (function | Current dst | Last dst ->
@@ -77,11 +72,11 @@ let get_graph xmodule =
       | Last i :: xs -> f (cs, i :: ls) xs
     in f ([], [])
   in
-  let nodes = collect M.empty xmodule.definition in
-  let in_ids = S.of_list (List.map fst (M.bindings nodes) @ List.map fst xmodule.in_node) in
+  let nodes = List.fold_left (fun m (i, _, e) -> M.add i e m) M.empty xmodule.node in
+  let in_ids = S.of_list (List.map fst (M.bindings nodes) @ xmodule.input) in
   let ins = M.map (extract in_ids) nodes in
   let inv = inv_map ins in
-  let root = List.fold_left (fun m (in_name, _) ->
+  let root = List.fold_left (fun m in_name ->
     let ancestors name = 
       let rec f visited name =
         if S.mem name visited then S.empty else
@@ -100,9 +95,9 @@ let get_graph xmodule =
         | None    -> Some(S.singleton in_name)
       )
     ) (ancestors in_name) m
-  ) M.empty xmodule.in_node
+  ) M.empty xmodule.input
   in
-  List.fold_left (fun m (i, _) -> M.add i ES.empty m) ins xmodule.in_node |>
+  List.fold_left (fun m i -> M.add i ES.empty m) ins xmodule.input |>
   M.mapi (fun k i -> 
     let (cur, last) = partition (ES.elements i) in
     let output = try S.elements (M.find k inv) with Not_found -> [] in
