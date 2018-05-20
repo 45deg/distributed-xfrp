@@ -1,7 +1,4 @@
-module M = Map.Make (struct
-                      type t = Syntax.id
-                      let compare = compare
-                    end)
+module M = Map.Make(String)
 type ti = Type.t M.t
 let empty: ti = M.empty
 let extend ti id ty = M.add id ty ti
