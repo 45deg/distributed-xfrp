@@ -54,7 +54,7 @@ type definition
   | Node of id_and_type_opt * expr option * expr
   | Fun of (id * (Type.t option list * Type.t option)) * expr
 
-type xmodule = {
+type program = {
   id: moduleid;
   in_node: id_and_type list;
   out_node: id_and_type list;
@@ -117,18 +117,3 @@ let string_of_definition defs =
     | Fun(_,_) -> assert false
     | Node((i,t), init, e) -> Printf.sprintf "node %s = %s" i (string_of_expr e) in
   String.concat "\n" (List.map str_def defs)
-
-let pp_module = function
-  | {
-    id = id;
-    in_node = ins;
-    out_node = outs;
-    use = mods;
-    definition = defs;
-  } -> 
-    Printf.printf "MODULE: %s\nIN: %s\nOUT: %s\nUSE: %s\nDEFS:\n%s\n"
-      id
-      (List.map fst ins |> String.concat ",")
-      (List.map fst outs |> String.concat ",")
-      (String.concat "," mods)
-      (string_of_definition defs)
