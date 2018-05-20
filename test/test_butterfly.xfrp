@@ -3,8 +3,8 @@ in
   in1 : Int,
   in2 : Int
 out 
-  out1 : Int,
-  out2 : Int
+  out1 : (Int, Int),
+  out2 : (Int, Int)
 use Std
 
 node a = in1 * 10 + in2

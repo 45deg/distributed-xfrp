@@ -4,9 +4,9 @@ in
   in2 : Int,
   in3 : Int
 out 
-  out1 : Int,
-  out2 : Int,
-  out3 : Int
+  out1 : (Int, Int, Int),
+  out2 : (Int, Int, Int),
+  out3 : (Int, Int, Int)
 use Std
 
 node a = in1 * 100 + in2 * 10 + in3

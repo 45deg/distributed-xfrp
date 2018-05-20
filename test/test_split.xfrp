@@ -2,7 +2,7 @@ module Split
 in
   num : Int
 out 
-  ab : Int
+  ab : (Int, Int)
 use Std
 
 node a = num * 2
