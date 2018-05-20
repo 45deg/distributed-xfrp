@@ -1,21 +1,21 @@
 open Syntax
+open Module
 open Dependency
 
 module S = Set.Make(String);;
 module M = Map.Make(String);;
-
 
 exception UnknownId of string
 let try_find id m = begin
   try M.find id m with Not_found -> (raise (UnknownId(id)))
 end
 
+let const id = "const_" ^ id ^ "()"
 let var = function
   | "_" -> "_"
   | s -> "V" ^ s
 let sig_var s = "S" ^ s
-let last_sig_var s = "LS" ^ s
-let at_last var = if var.[0] == 'S' then "L" ^ var else var
+let at_last var = "L" ^ var
 
 let mess = ref None
 let send i e = match !mess with
@@ -25,8 +25,6 @@ let send i e = match !mess with
 let concat_map s f l = String.concat s (List.map f l)
 let indent n s = String.make n '\t' ^ s
 
-let const s = String.uppercase_ascii s
-
 let erlang_of_expr env e = 
   let rec f env = function
     | EConst CUnit -> "void"
@@ -35,7 +33,7 @@ let erlang_of_expr env e =
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
     | EConst (CChar c) -> "?" ^ Char.escaped c
     | EId id -> try_find id env
-    | EAnnot (id, ALast) -> "L" ^ try_find id env
+    | EAnnot (id, ALast) -> at_last (try_find id env)
     | EApp (id, es) -> (* workaround *)
       id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
@@ -86,7 +84,7 @@ let main deps xmod inits env =
     concat_map ", " (fun i -> "{last, " ^ i ^ "} => " ^ init i) node.input_last
   ^ "}" in
   let spawn = concat_map "" (fun (id, node) ->
-    if List.exists (fun (i, _) -> compare i id == 0) xmod.in_node then
+    if List.exists (fun i -> compare i id == 0) xmod.input then
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
@@ -101,7 +99,7 @@ let main deps xmod inits env =
   indent 1 "register(out, spawn(?MODULE, out, [])),\n" ^
   indent 1 "in()."
 
-let in_node deps (id, _) = 
+let in_node deps id = 
   id ^ "(Version) ->\n" ^ 
   concat_map "\n" (indent 1) [
   "receive";
@@ -111,69 +109,60 @@ let in_node deps (id, _) =
   "end,";
   id ^ "(Version + 1)."]
 
-let def_node xmod deps inits renv debug_flg  = 
-  let env = !renv in function
-  | Node ((id, _), init, expr) -> 
-    let dep = try_find id deps in
-    let root_group = 
-      let is_root root id =
-        match (try_find id deps).root with
-        | [] -> compare root id == 0 (* source itself *)
-        | xs -> List.mem root xs
-      in
-      List.map (fun r -> (r, List.filter (is_root r) dep.input_current
-                           , List.filter (is_root r) dep.input_last)) dep.root in
-    let output = if List.exists (fun (i, _) -> compare i id == 0) xmod.out_node then "out" :: dep.output
-                 else dep.output in
-    let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
-    let bind (cs, ls) = "#{" ^ String.concat ", " (
-      List.map (fun id -> id ^ " := " ^ sig_var id) cs @
-      List.map (fun id -> "{last, " ^ id ^ "} := " ^ last_sig_var id) ls)
-    ^ "}" in
-    let update n =
-      indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
-      indent n "lists:foreach(fun (V) -> \n" ^
-      concat_map ",\n" (indent (n + 1)) (
-        List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
-      ) ^ "\n" ^
-      indent n "end, [Version|Deferred]),\n"
+let def_node deps env debug_flg (id, init, expr) =
+  let dep = try_find id deps in
+  let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
+  let bind (cs, ls) = "#{" ^ String.concat ", " (
+    List.map (fun id -> id ^ " := " ^ sig_var id) cs @
+    List.map (fun id -> "{last, " ^ id ^ "} := " ^ at_last (sig_var id)) ls)
+  ^ "}" in
+  let update n =
+    indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
+    indent n "lists:foreach(fun (V) -> \n" ^
+    concat_map ",\n" (indent (n + 1)) (
+      List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) dep.output
+    ) ^ "\n" ^
+    indent n "end, [Version|Deferred]),\n"
+  in
+  (* main node function *)
+  id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
+  (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
+  indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
+  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+  indent 2 "case E of\n" ^
+  concat_map "" (fun (root, currents, lasts) ->
+    let other_vars =
+      let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
+      (sub dep.input_current currents, sub dep.input_last lasts)
     in
-    (* main node function *)
-    id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
-    (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
-    indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-    indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
-    indent 2 "case E of\n" ^
-    concat_map "" (fun (root, currents, lasts) ->
-      let other_vars =
-        let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
-        (sub dep.input_current currents, sub dep.input_last lasts)
-      in
-      indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
-      match other_vars with
-      | ([],[]) -> 
-        update 4 ^
-        indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
-      | others ->
-        indent 4 "case Last of\n" ^
-				indent 5 (bind others) ^ " -> \n" ^
-        update 6 ^
-        indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
-        indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
-        indent 4 "end;\n"
-    ) root_group ^
-    indent 3 "_ -> {Heap, Last, Deferred}\n" ^
-    indent 2 "end\n" ^
-    indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
-    indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
-    (if debug_flg then indent 1 "io:format(\"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
-    indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-             "], Received, NHeap), NLast, NDeferred).\n"
-  | Const ((id, _), e) -> 
-    renv := M.add id ("?" ^ const id) env;
-    "-define(" ^ const id ^ ", " ^ erlang_of_expr env e ^ ")."
-  | Fun ((id, _), e) ->
-    id ^ erlang_of_expr env e ^ "."
+    indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
+    match other_vars with
+    | ([],[]) -> 
+      update 4 ^
+      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
+    | others ->
+      indent 4 "case Last of\n" ^
+      indent 5 (bind others) ^ " -> \n" ^
+      update 6 ^
+      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
+      indent 4 "end;\n"
+  ) dep.root_group ^
+  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
+  indent 2 "end\n" ^
+  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
+  (if debug_flg then indent 1 "io:format(\"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
+  indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+            "], Received, NHeap), NLast, NDeferred).\n"
+
+let def_const env (id, e) =
+  const id ^ " -> " ^ erlang_of_expr env e ^ "."
+
+let def_fun env (id, EFun(args, e)) =
+  id ^ "(" ^ concat_map ", " var args ^ ") -> \n" ^
+  indent 1 (erlang_of_expr env e) ^ "."
+let def_fun _ _ = assert false
 
 let init_values x ti =
   let rec of_type = let open Type in function
@@ -184,13 +173,9 @@ let init_values x ti =
     | TChar -> EConst(CBool(false))
     | TTuple ts -> ETuple(List.map of_type ts)
     | _ -> assert false in
-  let collect m = function 
-    | Node((i, _), Some(init), _) -> M.add i init m
-    | Node((i, _), None, _) -> M.add i (of_type (Typeinfo.find i ti)) m
-    | _ -> m
-  in
-  let ins = List.fold_left (fun m (i,_) -> M.add i (of_type (Typeinfo.find i ti)) m) M.empty x.in_node in
-  List.fold_left collect ins x.definition
+  List.fold_left (fun m -> function 
+    | (id, Some(init), _) -> M.add id init m
+    | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node
 
 let lib_funcs = String.concat "\n" [
   "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
@@ -208,17 +193,17 @@ let lib_funcs = String.concat "\n" [
   indent 1 "end."
 ]
 
-let in_func x = String.concat "\n" @@
+let in_func input = String.concat "\n" @@
   "in() ->" :: List.map (indent 1) (
     "%fill here" ::
-    List.map (fun (i, _) -> "% " ^ i ^ " ! sth") x.in_node @
+    List.map (fun i -> "% " ^ i ^ " ! sth") input @
     ["in()."]
   )
 
-let out_func x = String.concat "\n" @@
+let out_func output = String.concat "\n" @@
   "out() ->" :: List.map (indent 1) [
     "receive";
-    (concat_map ";\n" (fun (i, _) -> indent 1 "{" ^ i ^ ", Value, Version} -> Value") x.out_node);
+    (concat_map ";\n" (fun i -> indent 1 "{" ^ i ^ ", Value, Version} -> Value") output);
     "end,";
     "out()."
   ]
@@ -228,32 +213,26 @@ let of_xmodule x ti template (debug_flg, _mess) =
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("in", 0); ("out", 0)];
-     List.map (fun (i,_) -> (i, 1)) x.in_node;
-     List.fold_left (fun l e -> match e with
-     | Node ((id, _), _, _) -> 
-      (id, 3) :: l
-     | Fun ((id, _), EFun(args, _))  -> (id, List.length args) :: l
-     | _ -> l
-     ) [] x.definition
-     ]
+     List.map (fun i -> (i, 1)) x.input;
+     List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
     ^ "]).") attributes) in
-  let env = M.bindings dep
-            |> List.fold_left (fun env (id, _) -> M.add id (last_sig_var id) env) M.empty
-  in
+  let env = List.fold_left (fun m (i,_) -> M.add i (const i) m) M.empty x.const in
   let inits = (init_values x ti) in
   String.concat "\n\n" (
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
     lib_funcs ::
-    main dep x inits env ::
-    (match template with
-      | Some s -> [s]
-      | None   -> [in_func x; out_func x])
+    List.map (def_const env) x.const
+    @ List.map (def_fun env) x.func
+    @ main dep x inits env ::
+     (match template with
+       | Some s -> [s]
+       | None   -> [in_func x.input; out_func x.output])
     (* outfunc *)
-    @ (List.map (in_node dep) x.in_node)
-    @ (let renv = ref env in List.map (def_node x dep inits renv debug_flg) x.definition)
+    @ (List.map (in_node dep) x.input)
+    @ List.map (def_node dep env debug_flg) x.node
   )
