@@ -188,25 +188,45 @@ let rec is_concrete = function
     -> List.for_all is_concrete ts
   | _ -> true
 
-let type_module ({ definition = defs; in_node = i; out_node = o; _ }) = 
-  let default = function 
-  | Some(t) -> t
-  | None    -> gen_var 0 in
-  let rec collect (is, ts, es) = function 
-  | [] -> (is, ts, es)
-  | (Const ((i, t), e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
-  | (Node ((i, t), _, e)) :: xs -> collect (i :: is, default t :: ts, e :: es) xs
-  | (Fun ((i, (at, rt)), e)) :: xs -> 
-    let t = TFun(List.map default at, default rt) in
-    collect (i :: is, t :: ts, e :: es) xs
-  in
-  let (ids, annots, exprs) = collect ([], [], []) defs in
-  let ioenv = List.fold_left (fun m (i, t) -> Typeinfo.extend m i t) Typeinfo.empty (i @ o) in
-  let env = List.fold_left2 Typeinfo.extend ioenv ids annots in
-  let exprs_t = List.map (infer env 1) exprs in
-  List.iter2 unify exprs_t annots;
-  let gen_ts = List.map (generalize 0) exprs_t in
-  let result = Typeinfo.extend_all env ids gen_ts in
-  if Typeinfo.for_all (fun _ t -> is_concrete t) result
-    then result
-    else raise (TypeError("Generic types remain: " ^ Typeinfo.string_of_ti env))
+let infer_defs level defs env =
+  let (ids, exprs) = List.split defs in
+  let exprs_t = List.map (fun (id,t) -> 
+    try infer env (level + 1) t
+    with | TypeError(s) -> 
+      raise (TypeError("For " ^ id ^ ", " ^ s))) defs in
+  List.iter2 (fun id t -> 
+    let annot = Module.M.find id env in
+    try
+      unify annot t
+    with | TypeError(s) -> 
+      raise (TypeError("For " ^ id ^ ", " ^ s))
+  ) ids exprs_t;
+  let gen_ts = List.map (generalize level) exprs_t in
+  Typeinfo.extend_all env ids gen_ts
+
+let make_env default =
+  let open Module in
+  M.map (function 
+  | TAConst (Some (t)) -> t
+  | TAConst None       -> gen_var 0
+  | TAFun (at, rt)     ->
+    let default = function | Some(t) -> t
+                           | None    -> gen_var 1 in
+    TFun(List.map default at, default rt)
+  | TANode  (Some (t)) -> t
+  | TANode  None       -> gen_var 2
+  ) default
+
+let type_module program = 
+  let open Module in
+  let env = make_env program.typeinfo in
+  let { const = c; func = f; node = n } = program in
+  let result = env |>
+  infer_defs 0 c |>
+  infer_defs 1 f |>
+  infer_defs 2 (List.map (fun (i,_,e) -> (i,e)) n) in
+  if List.for_all (fun (i, _, _) -> is_concrete (Typeinfo.find i result)) n then
+    (* check all nodes are concrete type. *)
+    result
+  else 
+    raise (TypeError("Generic types remain: " ^ Typeinfo.string_of_ti env))
