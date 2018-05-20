@@ -19,7 +19,7 @@ let rec string_of_type = function
   | TChar -> "Char"
   | TInt -> "Int"
   | TFloat -> "Float"
-  | TTuple(ts) -> String.concat ", " (List.map string_of_type ts)
+  | TTuple(ts) -> "(" ^ String.concat ", " (List.map string_of_type ts) ^ ")"
   | TFun(args, ret) -> "(" ^ String.concat ", " (List.map string_of_type args) ^ ") -> " ^ string_of_type ret
   | TVar {contents = TVBound ty}
     -> string_of_type ty
