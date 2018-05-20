@@ -3,7 +3,8 @@ open Syntax
 module M = Map.Make(String);;
 
 type tannot
-   = TAValue of Type.t option
+   = TAConst of Type.t option
+   | TANode of Type.t option
    | TAFun of Type.t option list * Type.t option
 
 type t = {
@@ -25,13 +26,13 @@ let collect defs =
   (List.rev a, List.rev b, List.rev c)
 
 let make_type program = 
-  let in_t  = List.fold_left (fun m (i,t) -> M.add i (TAValue (Some t)) m) M.empty program.in_node in
+  let in_t  = List.fold_left (fun m (i,t) -> M.add i (TANode (Some t)) m) M.empty program.in_node in
   let def_t = List.fold_left (fun m -> function
-    | (Const ((i, t), _)) -> M.add i (TAValue t) m
+    | (Const ((i, t), _)) -> M.add i (TAConst t) m
     | (Fun ((i, (ta,tr)), _)) -> M.add i (TAFun (ta, tr)) m
-    | (Node ((i, t), _, _)) -> M.add i (TAValue t) m
+    | (Node ((i, t), _, _)) -> M.add i (TANode t) m
   ) in_t program.definition in
-  let out_t = List.fold_left (fun m (i,t) -> M.add i (TAValue (Some t)) m) def_t program.out_node in
+  let out_t = List.fold_left (fun m (i,t) -> M.add i (TANode (Some t)) m) def_t program.out_node in
   out_t
 
 let of_program program = 
