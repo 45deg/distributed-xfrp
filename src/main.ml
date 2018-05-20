@@ -55,6 +55,7 @@ let compile in_c =
 
 let () =
   Arg.parse speclist (fun s -> input_file := Some(s)) "Usage:";
+  if !debug_mode then Printexc.record_backtrace true;
   try
     let input = open_in (match !input_file with 
       | Some s -> s
