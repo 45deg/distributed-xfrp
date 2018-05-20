@@ -22,6 +22,7 @@ type dependency = {
   input_current: id list;
   input_last: id list;
   root: id list;
+  root_group: (id * id list * id list) list;
   output: id list
 }
 
@@ -31,7 +32,10 @@ let string_of_graph graph =
   List.map (fun (k, r) -> "" ^ k ^ ": in_c(" ^ (String.concat ", " r.input_current) ^ ")" 
                                  ^ ": in_l(" ^ (String.concat ", " r.input_last) ^ ")"
                                  ^ ": out(" ^ (String.concat ", " r.output) ^ ")"
-                                 ^ ": root(" ^ (String.concat ", " r.root) ^ ")") |>
+                                 ^ ": root({" ^ (String.concat ", " (
+                                    List.map (fun (i, c, l) -> i ^ " -> (" ^ String.concat "," c ^ ";"
+                                                                           ^ String.concat "," l ^ ")") r.root_group
+                                 )) ^ "})") |>
   String.concat "\n"
 
 let get_graph xmodule = 
@@ -98,13 +102,18 @@ let get_graph xmodule =
   ) M.empty xmodule.input
   in
   List.fold_left (fun m i -> M.add i ES.empty m) ins xmodule.input |>
-  M.mapi (fun k i -> 
-    let (cur, last) = partition (ES.elements i) in
-    let output = try S.elements (M.find k inv) with Not_found -> [] in
+  M.mapi (fun k i -> partition (ES.elements i)) |>
+  M.mapi (fun k (cur, last) ->
+    let common_root r ids = List.filter (fun id -> 
+      try S.mem r (M.find id root) with Not_found -> compare r id == 0
+    ) ids in
+    let roots = try S.elements (M.find k root) with Not_found -> [] in
     { 
       input_current = cur;
       input_last = last;
-      output = output;
-      root = (try S.elements (M.find k root) with Not_found -> [])
+      output = (try S.elements (M.find k inv) with Not_found -> []);
+      root = roots;
+      root_group = List.map (fun r -> (r, common_root r cur, common_root r last)) roots
     }
   )
+    
