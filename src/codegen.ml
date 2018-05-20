@@ -7,7 +7,8 @@ module M = Map.Make(String);;
 
 exception UnknownId of string
 let try_find id m = begin
-  try M.find id m with Not_found -> (raise (UnknownId(id)))
+  try M.find id m with 
+    Not_found -> (raise (UnknownId(id)))
 end
 
 let const id = "const_" ^ id ^ "()"
@@ -111,16 +112,16 @@ let in_node deps id =
 
 let def_node deps env debug_flg (id, init, expr) =
   let dep = try_find id deps in
-  let newenv = List.fold_left (fun m i -> M.add i (sig_var i) m) env (dep.input_current @ dep.input_last)  in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
     List.map (fun id -> id ^ " := " ^ sig_var id) cs @
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ at_last (sig_var id)) ls)
   ^ "}" in
-  let update n =
-    indent n "Curr = " ^ erlang_of_expr newenv expr ^ ",\n" ^
+  let update n = 
+    let output = if dep.is_output then "out" :: dep.output else dep.output in
+    indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
     indent n "lists:foreach(fun (V) -> \n" ^
     concat_map ",\n" (indent (n + 1)) (
-      List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) dep.output
+      List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
     ) ^ "\n" ^
     indent n "end, [Version|Deferred]),\n"
   in
@@ -159,10 +160,11 @@ let def_node deps env debug_flg (id, init, expr) =
 let def_const env (id, e) =
   const id ^ " -> " ^ erlang_of_expr env e ^ "."
 
-let def_fun env (id, EFun(args, e)) =
-  id ^ "(" ^ concat_map ", " var args ^ ") -> \n" ^
-  indent 1 (erlang_of_expr env e) ^ "."
-let def_fun _ _ = assert false
+let def_fun env (id, body) = match body with
+  | EFun(args, e) ->
+    id ^ "(" ^ concat_map ", " var args ^ ") -> \n" ^
+    indent 1 (erlang_of_expr env e) ^ "."
+  | _ -> assert false
 
 let init_values x ti =
   let rec of_type = let open Type in function
@@ -173,9 +175,10 @@ let init_values x ti =
     | TChar -> EConst(CBool(false))
     | TTuple ts -> ETuple(List.map of_type ts)
     | _ -> assert false in
-  List.fold_left (fun m -> function 
+  let node_init = List.fold_left (fun m -> function 
     | (id, Some(init), _) -> M.add id init m
-    | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node
+    | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
+  List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.input
 
 let lib_funcs = String.concat "\n" [
   "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
@@ -212,7 +215,7 @@ let of_xmodule x ti template (debug_flg, _mess) =
   mess := _mess;
   let dep = Dependency.get_graph x in
   let attributes = 
-    [[("main", 0)]; [("in", 0); ("out", 0)];
+    [[("main", 0)]; [("out", 0)];
      List.map (fun i -> (i, 1)) x.input;
      List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
@@ -220,6 +223,9 @@ let of_xmodule x ti template (debug_flg, _mess) =
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
     ^ "]).") attributes) in
   let env = List.fold_left (fun m (i,_) -> M.add i (const i) m) M.empty x.const in
+  let env_with_nodes =
+    List.map (fun (i, _, _) -> i) x.node @ x.input |>
+    List.fold_left (fun m i -> M.add i (sig_var i) m) env in
   let inits = (init_values x ti) in
   String.concat "\n\n" (
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
@@ -234,5 +240,5 @@ let of_xmodule x ti template (debug_flg, _mess) =
        | None   -> [in_func x.input; out_func x.output])
     (* outfunc *)
     @ (List.map (in_node dep) x.input)
-    @ List.map (def_node dep env debug_flg) x.node
+    @ List.map (def_node dep env_with_nodes debug_flg) x.node
   )

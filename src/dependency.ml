@@ -23,7 +23,8 @@ type dependency = {
   input_last: id list;
   root: id list;
   root_group: (id * id list * id list) list;
-  output: id list
+  output: id list;
+  is_output: bool
 }
 
 let string_of_graph graph = 
@@ -113,7 +114,8 @@ let get_graph xmodule =
       input_last = last;
       output = (try S.elements (M.find k inv) with Not_found -> []);
       root = roots;
-      root_group = List.map (fun r -> (r, common_root r cur, common_root r last)) roots
+      root_group = List.map (fun r -> (r, common_root r cur, common_root r last)) roots;
+      is_output = List.mem k xmodule.output
     }
   )
     
