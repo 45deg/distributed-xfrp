@@ -86,7 +86,7 @@ let main deps xmod inits env =
     concat_map ", " (fun i -> "{last, " ^ i ^ "} => " ^ init i) node.input_last
   ^ "}" in
   let spawn = concat_map "" (fun (id, node) ->
-    if List.exists (fun i -> compare i id == 0) xmod.input then
+    if List.exists (fun i -> compare i id == 0) xmod.source then
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
     else
@@ -178,7 +178,7 @@ let init_values x ti =
   let node_init = List.fold_left (fun m -> function 
     | (id, Some(init), _) -> M.add id init m
     | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
-  List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.input
+  List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
 let lib_funcs = String.concat "\n" [
   "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
@@ -216,7 +216,7 @@ let of_xmodule x ti template (debug_flg, _mess) =
   let dep = Dependency.get_graph x in
   let attributes = 
     [[("main", 0)]; [("out", 0)];
-     List.map (fun i -> (i, 1)) x.input;
+     List.map (fun i -> (i, 1)) x.source;
      List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
@@ -224,7 +224,7 @@ let of_xmodule x ti template (debug_flg, _mess) =
     ^ "]).") attributes) in
   let env = List.fold_left (fun m (i,_) -> M.add i (const i) m) M.empty x.const in
   let env_with_nodes =
-    List.map (fun (i, _, _) -> i) x.node @ x.input |>
+    List.map (fun (i, _, _) -> i) x.node @ x.sink |>
     List.fold_left (fun m i -> M.add i (sig_var i) m) env in
   let inits = (init_values x ti) in
   String.concat "\n\n" (
@@ -237,8 +237,8 @@ let of_xmodule x ti template (debug_flg, _mess) =
     @ main dep x inits env ::
      (match template with
        | Some s -> [s]
-       | None   -> [in_func x.input; out_func x.output])
+       | None   -> [in_func x.source; out_func x.sink])
     (* outfunc *)
-    @ (List.map (in_node dep) x.input)
+    @ (List.map (in_node dep) x.source)
     @ List.map (def_node dep env_with_nodes debug_flg) x.node
   )

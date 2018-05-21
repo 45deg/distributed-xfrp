@@ -9,8 +9,8 @@ type tannot
 
 type t = {
   id: moduleid;
-  input: id list;
-  output: id list;
+  source: id list;
+  sink: id list;
   const: (id * expr) list;
   func: (id * expr) list;
   node: (id * expr option * expr) list;
@@ -39,8 +39,8 @@ let of_program program =
   let (const, func, node) = collect program.definition in
   {
     id = program.id;
-    input = List.map fst program.in_node;
-    output = List.map fst program.out_node;
+    source = List.map fst program.in_node;
+    sink = List.map fst program.out_node;
     const = const;
     node = node;
     func = func;

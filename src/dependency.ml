@@ -78,7 +78,7 @@ let get_graph xmodule =
     in f ([], [])
   in
   let nodes = List.fold_left (fun m (i, _, e) -> M.add i e m) M.empty xmodule.node in
-  let in_ids = S.of_list (List.map fst (M.bindings nodes) @ xmodule.input) in
+  let in_ids = S.of_list (List.map fst (M.bindings nodes) @ xmodule.source) in
   let ins = M.map (extract in_ids) nodes in
   let inv = inv_map ins in
   let root = List.fold_left (fun m in_name ->
@@ -100,9 +100,9 @@ let get_graph xmodule =
         | None    -> Some(S.singleton in_name)
       )
     ) (ancestors in_name) m
-  ) M.empty xmodule.input
+  ) M.empty xmodule.source
   in
-  List.fold_left (fun m i -> M.add i ES.empty m) ins xmodule.input |>
+  List.fold_left (fun m i -> M.add i ES.empty m) ins xmodule.source |>
   M.mapi (fun k i -> partition (ES.elements i)) |>
   M.mapi (fun k (cur, last) ->
     let common_root r ids = List.filter (fun id -> 
@@ -115,7 +115,6 @@ let get_graph xmodule =
       output = (try S.elements (M.find k inv) with Not_found -> []);
       root = roots;
       root_group = List.map (fun r -> (r, common_root r cur, common_root r last)) roots;
-      is_output = List.mem k xmodule.output
+      is_output = List.mem k xmodule.sink
     }
   )
-    
