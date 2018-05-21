@@ -50,6 +50,14 @@ let compile in_c =
   | Syntax.InvalidId(id) ->
     let pos = lexbuf.lex_curr_p in
     raise (CompileError(Printf.sprintf "Id \"%s\" is reserved at Line %d, Char %d." id pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))
+  | Codegen.InfiniteLoop(loops) ->
+    raise (CompileError("Loop detected: " ^
+      String.concat ", " (List.map (fun loop -> 
+        String.concat " -> " (loop @ [List.hd loop])
+      ) loops) 
+    ))
+  | Codegen.UnknownId(id) ->
+    raise (CompileError("Not found id \"" ^ id ^ "\""))
   | Parser.Error ->
     let pos = lexbuf.lex_curr_p in
     raise (CompileError(Printf.sprintf "Syntax error at Line %d, Char %d." pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))

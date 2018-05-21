@@ -118,3 +118,26 @@ let get_graph xmodule =
       is_output = List.mem k xmodule.sink
     }
   )
+
+let find_loop in_nodes dependency =
+  let inv = Hashtbl.create 13 in
+  M.iter (fun dst d -> 
+    List.iter (fun src ->
+      Hashtbl.add inv src dst
+    ) d.input_current
+  ) dependency;
+  let rec dropwhile thunk a = function
+    | [] -> None
+    | x :: xs when compare x a == 0 -> Some(x :: thunk) 
+    | x :: xs -> dropwhile (x :: thunk) a xs in
+  let rec f trace nodes = 
+    match nodes with
+    | [] -> []
+    | n :: ns ->
+      match dropwhile [] n trace with
+      | Some(xs) ->
+        [xs]
+      | None ->
+        (f (n :: trace) (Hashtbl.find_all inv n)) @ (f trace ns)
+  in
+  List.concat (List.map (fun n -> f [] (Hashtbl.find_all inv n)) in_nodes)

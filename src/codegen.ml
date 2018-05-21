@@ -6,6 +6,8 @@ module S = Set.Make(String);;
 module M = Map.Make(String);;
 
 exception UnknownId of string
+exception InfiniteLoop of string list list
+
 let try_find id m = begin
   try M.find id m with 
     Not_found -> (raise (UnknownId(id)))
@@ -214,6 +216,9 @@ let out_func output = String.concat "\n" @@
 let of_xmodule x ti template (debug_flg, _mess) = 
   mess := _mess;
   let dep = Dependency.get_graph x in
+  (match Dependency.find_loop x.source dep with
+    | [] -> ()
+    | loops -> raise (InfiniteLoop(loops)));
   let attributes = 
     [[("main", 0)]; [("out", 0)];
      List.map (fun i -> (i, 1)) x.source;
