@@ -224,7 +224,7 @@ let of_xmodule x ti template (debug_flg, _mess) =
     ^ "]).") attributes) in
   let env = List.fold_left (fun m (i,_) -> M.add i (const i) m) M.empty x.const in
   let env_with_nodes =
-    List.map (fun (i, _, _) -> i) x.node @ x.sink |>
+    List.map (fun (i, _, _) -> i) x.node @ x.source |>
     List.fold_left (fun m i -> M.add i (sig_var i) m) env in
   let inits = (init_values x ti) in
   String.concat "\n\n" (
