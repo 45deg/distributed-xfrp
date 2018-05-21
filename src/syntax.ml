@@ -62,6 +62,8 @@ type program = {
   definition: definition list;
 }
 
+exception InvalidId of string
+
 let rec string_of_const = function
   | CUnit -> "()"
   | CBool b -> string_of_bool b

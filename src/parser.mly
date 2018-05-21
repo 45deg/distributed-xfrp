@@ -1,6 +1,14 @@
 %{
 open Syntax
 open Type
+
+module S = Set.Make(String);;
+
+let reserved_word = S.of_list [
+  "in";
+  "out"
+]
+
 %}
 
 %token
@@ -62,7 +70,7 @@ definition:
 
 expr:
   | constant { EConst($1) }
-  | ID       { EId($1) }
+  | ID       { if S.mem $1 reserved_word then (raise (InvalidId($1))) else EId($1) }
   | id = ID AT a = annotation { EAnnot(id, a) }
   | id = ID LPAREN args = args RPAREN { EApp(id, args) }
   | expr binop expr { EBin($2, $1, $3) }

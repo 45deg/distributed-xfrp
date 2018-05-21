@@ -47,6 +47,9 @@ let compile in_c =
   with 
   | Lexer.Error msg ->
     raise (CompileError("Lexing error: " ^ msg))
+  | Syntax.InvalidId(id) ->
+    let pos = lexbuf.lex_curr_p in
+    raise (CompileError(Printf.sprintf "Id \"%s\" is reserved at Line %d, Char %d." id pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))
   | Parser.Error ->
     let pos = lexbuf.lex_curr_p in
     raise (CompileError(Printf.sprintf "Syntax error at Line %d, Char %d." pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))
