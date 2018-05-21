@@ -12,6 +12,7 @@ let try_find id m = begin
 end
 
 let const id = "const_" ^ id ^ "()"
+let func  id = "fun_" ^ id
 let var = function
   | "_" -> "_"
   | s -> "V" ^ s
@@ -36,7 +37,7 @@ let erlang_of_expr env e =
     | EId id -> try_find id env
     | EAnnot (id, ALast) -> at_last (try_find id env)
     | EApp (id, es) -> (* workaround *)
-      id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
+      func id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
         | BMul -> " * "   | BDiv -> " / "        | BMod -> " rem "
         | BAdd -> " + "   | BSub -> " - "        | BShL -> " bsl "
@@ -161,9 +162,8 @@ let def_const env (id, e) =
   const id ^ " -> " ^ erlang_of_expr env e ^ "."
 
 let def_fun env (id, body) = match body with
-  | EFun(args, e) ->
-    id ^ "(" ^ concat_map ", " var args ^ ") -> \n" ^
-    indent 1 (erlang_of_expr env e) ^ "."
+  | EFun(_, _) ->
+    func id ^ erlang_of_expr env body ^ "."
   | _ -> assert false
 
 let init_values x ti =
