@@ -3,6 +3,16 @@ open Syntax
 
 exception TypeError of string
 
+let iter2 f a b fa fb = 
+  try 
+    List.iter2 f a b
+  with
+  | Invalid_argument(_) -> 
+    raise (TypeError("two types have different lengths: (" ^ 
+                String.concat "," (List.map fa a) ^ ") and (" ^ 
+                String.concat "," (List.map fb b) ^ ")"))
+let iter2ty f a b = iter2 f a b (string_of_type) (string_of_type)
+
 let rec adjust_level id level = function
   | TVar {contents = TVBound ty}
     -> adjust_level id level ty
@@ -32,9 +42,9 @@ let rec unify t1 t2 =
     | TInt, TUnit
     | TFloat, TFloat -> ()
     | TTuple(ts1), TTuple(ts2)
-      -> List.iter2 unify ts1 ts2
+      -> iter2ty unify ts1 ts2
     | TFun(a1, r1), TFun(a2, r2)
-      -> List.iter2 unify a1 a2;
+      -> iter2ty unify a1 a2;
          unify r1 r2
     | TVar {contents = TVBound t1}, t2
     | t1, TVar {contents = TVBound t2}
@@ -118,18 +128,17 @@ let rec infer env level = function
   | ELet(binds, body) ->
     let (ids, es, tanots) = split3 binds in
     let var_ts = List.map (infer env (level + 1)) es in
-    List.iter2 (fun t1 t2 -> match t1, t2 with
+    iter2 (fun t1 t2 -> match t1, t2 with
       | t1, Some(t2) -> unify t1 t2
-      | _, None -> ()) var_ts tanots;
+      | _, None -> ()) var_ts tanots
+      string_of_type (function | Some(t) -> string_of_type t | None -> "?");
     let gen_ts = List.map (generalize level) var_ts in
     infer (Typeinfo.extend_all env ids gen_ts) level body
   | EApp(f_id, args) ->
     let args_t, ret_t =
       match_fun (List.length args) (infer env level (EId(f_id)))
     in
-    List.iter2
-      (fun arg_t arg -> unify arg_t (infer env level arg))
-      args_t args
+    iter2ty unify args_t (List.map (infer env level) args)
     ;
     ret_t
   | EBin(b, e1, e2) ->
@@ -194,13 +203,14 @@ let infer_defs level defs env =
     try infer env (level + 1) t
     with | TypeError(s) -> 
       raise (TypeError("For " ^ id ^ ", " ^ s))) defs in
-  List.iter2 (fun id t -> 
-    let annot = Module.M.find id env in
+  let annots = List.map (fun id -> (id,Module.M.find id env)) ids in
+  iter2 (fun (id,annot) t -> 
     try
       unify annot t
     with | TypeError(s) -> 
       raise (TypeError("For " ^ id ^ ", " ^ s))
-  ) ids exprs_t;
+  ) annots exprs_t
+    (fun (_, t) -> string_of_type t) (string_of_type);
   let gen_ts = List.map (generalize level) exprs_t in
   Typeinfo.extend_all env ids gen_ts
 
