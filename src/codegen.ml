@@ -120,13 +120,15 @@ let def_node deps env debug_flg (id, init, expr) =
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ at_last (sig_var id)) ls)
   ^ "}" in
   let update n = 
-    let output = if dep.is_output then "out" :: dep.output else dep.output in
-    indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
-    indent n "lists:foreach(fun (V) -> \n" ^
-    concat_map ",\n" (indent (n + 1)) (
-      List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
-    ) ^ "\n" ^
-    indent n "end, [Version|Deferred]),\n"
+    match (if dep.is_output then "out" :: dep.output else dep.output) with
+      | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
+      | output ->
+        indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
+        indent n "lists:foreach(fun (V) -> \n" ^
+        concat_map ",\n" (indent (n + 1)) (
+          List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
+        ) ^ "\n" ^
+        indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
   id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
@@ -208,7 +210,7 @@ let in_func input = String.concat "\n" @@
 let out_func output = String.concat "\n" @@
   "out() ->" :: List.map (indent 1) [
     "receive";
-    (concat_map ";\n" (fun i -> indent 1 "{" ^ i ^ ", Value, Version} -> Value") output);
+    (concat_map ";\n" (fun i -> indent 1 "{" ^ i ^ ", Value, Version} -> io:format(\"~p @ ~p~n\", [Value, Version])") output);
     "end,";
     "out()."
   ]
