@@ -227,6 +227,22 @@ let make_env default =
   | TANode  None       -> gen_var 2
   ) default
 
+let check_init env n =
+  List.iter (fun (id, init_opt, _) ->
+    match init_opt with 
+    | Some (init) -> begin
+      let ty = Typeinfo.find id env in
+      let init_ty = infer env 2 init in
+      try
+        unify ty init_ty
+      with | TypeError(s) -> 
+        raise (TypeError("For " ^ id ^ ", " ^
+          "the type of init value does not match: "
+          ^ string_of_type init_ty ^ " and " ^ string_of_type ty))
+      end
+    | None -> ()
+  ) n
+
 let type_module program = 
   let open Module in
   let env = make_env program.typeinfo in
@@ -235,6 +251,7 @@ let type_module program =
   infer_defs 0 c |>
   infer_defs 1 f |>
   infer_defs 2 (List.map (fun (i,_,e) -> (i,e)) n) in
+  check_init result n;
   if List.for_all (fun (i, _, _) -> is_concrete (Typeinfo.find i result)) n then
     (* check all nodes are concrete type. *)
     result
