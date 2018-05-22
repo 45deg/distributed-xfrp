@@ -8,6 +8,14 @@ module M = Map.Make(String);;
 exception UnknownId of string
 exception InfiniteLoop of string list list
 
+type code_option = {
+  debug: bool;
+  mess: int option;
+  drop: float option;
+}
+
+let config = ref { debug = false; mess = None; drop = None }
+
 let try_find id m = begin
   try M.find id m with 
     Not_found -> (raise (UnknownId(id)))
@@ -21,10 +29,19 @@ let var = function
 let sig_var s = "S" ^ s
 let at_last var = "L" ^ var
 
-let mess = ref None
-let send i e = match !mess with
-  | None   -> i ^ " ! " ^ e
-  | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ i ^ ", " ^ e ^ ")"
+let send i e = 
+  let expr = match !config.mess with
+    | None   -> i ^ " ! " ^ e
+    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ i ^ ", " ^ e ^ ")" in
+  match !config.drop with
+    | None -> expr
+    | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") of true -> "
+                   ^ expr ^ "; false -> " ^ 
+                    (if !config.debug then
+                      "io:format(standard_error, \"Dropped ~p~n\", [" ^ e ^ "])"
+                    else
+                      "false")
+                   ^ " end)"
 
 let concat_map s f l = String.concat s (List.map f l)
 let indent n s = String.make n '\t' ^ s
@@ -113,7 +130,7 @@ let in_node deps id =
   "end,";
   id ^ "(Version + 1)."]
 
-let def_node deps env debug_flg (id, init, expr) =
+let def_node deps env (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
     List.map (fun id -> id ^ " := " ^ sig_var id) cs @
@@ -132,7 +149,7 @@ let def_node deps env debug_flg (id, init, expr) =
   in
   (* main node function *)
   id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
-  (if debug_flg then indent 1 "io:format(\"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
   indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
@@ -158,7 +175,7 @@ let def_node deps env debug_flg (id, init, expr) =
   indent 2 "end\n" ^
   indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
-  (if debug_flg then indent 1 "io:format(\"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
             "], Received, NHeap), NLast, NDeferred).\n"
 
@@ -215,8 +232,8 @@ let out_func output = String.concat "\n" @@
     "out()."
   ]
 
-let of_xmodule x ti template (debug_flg, _mess) = 
-  mess := _mess;
+let of_xmodule x ti template opt = 
+  config := opt;
   let dep = Dependency.get_graph x in
   (match Dependency.find_loop x.source dep with
     | [] -> ()
@@ -247,5 +264,5 @@ let of_xmodule x ti template (debug_flg, _mess) =
        | None   -> [in_func x.source; out_func x.sink])
     (* outfunc *)
     @ (List.map (in_node dep) x.source)
-    @ List.map (def_node dep env_with_nodes debug_flg) x.node
+    @ List.map (def_node dep env_with_nodes) x.node
   )

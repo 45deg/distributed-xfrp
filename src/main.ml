@@ -10,15 +10,22 @@ let output_file = ref None
 let input_file  = ref None
 let template_file = ref None
 let debug_mode = ref false
-let mess = ref None
+
+let opt = let open Codegen in ref {
+  debug = false;
+  mess = None;
+  drop = None
+}
+
 let mode = ref Erlang
 
 let speclist = [
-  ("-o", Arg.String(fun s -> output_file := Some(s)), "Write output to file.");
-  ("-t", Arg.String(fun s -> template_file := Some(s)), "Template for I/O functions.");
+  ("-o", Arg.String(fun s -> output_file := Some(s)), " [file] Write output to file.");
+  ("-t", Arg.String(fun s -> template_file := Some(s)), " [file] Template for I/O functions.");
   ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
-  ("-debug", Arg.Unit(fun _ -> debug_mode := true), "(experimental) Output function trace");
-  ("-mess", Arg.Int(fun n -> mess := Some(n)), "(experimental) Let sending message delayed randomly (0-N ms)")
+  ("-debug", Arg.Unit(fun _ -> opt := { !opt with debug = true }), "Output function trace (experimental)");
+  ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
+  ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)")
 ]
 
 let load_file f =
@@ -41,7 +48,7 @@ let compile in_c =
     match !mode with
       | Erlang ->
         let ti = Typing.type_module xmod in
-        Codegen.of_xmodule xmod ti template (!debug_mode, !mess)
+        Codegen.of_xmodule xmod ti template !opt
       | Dot -> 
         Graphviz.of_xmodule xmod
   with 
