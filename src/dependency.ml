@@ -54,7 +54,8 @@ let get_graph xmodule =
         ) (ES.empty, f expr) binders 
         in ES.union outer inner
       | EIf(c, a, b) -> ES.union (f c) (ES.union (f a) (f b))
-      | ETuple es -> List.map f es |> List.fold_left ES.union ES.empty
+      | EList es | ETuple es -> 
+        List.map f es |> List.fold_left ES.union ES.empty
       | EFun (args, e) -> 
         ES.diff (f e) (ES.of_list (List.map (fun a -> Current a) args))
       | ECase(m, list) -> (f m :: List.map (fun (_, e) -> f e) list) |> List.fold_left ES.union ES.empty
