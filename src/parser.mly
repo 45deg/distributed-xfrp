@@ -146,7 +146,7 @@ id_and_type_opt:
 type_spec:
   | t = prim_type_spec
     { t }
-  | LPAREN tpl = separated_nonempty_list(COMMA, prim_type_spec) RPAREN
+  | LPAREN tpl = separated_nonempty_list(COMMA, type_spec) RPAREN
     { TTuple(tpl) }
 
 prim_type_spec:
