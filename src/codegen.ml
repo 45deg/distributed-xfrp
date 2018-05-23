@@ -6,6 +6,7 @@ module S = Set.Make(String);;
 module M = Map.Make(String);;
 
 exception UnknownId of string
+exception AtLastError of string
 exception InfiniteLoop of string list list
 
 type code_option = {
@@ -21,13 +22,26 @@ let try_find id m = begin
     Not_found -> (raise (UnknownId(id)))
 end
 
-let const id = "const_" ^ id ^ "()"
-let func  id = "fun_" ^ id
-let var = function
-  | "_" -> "_"
-  | s -> "V" ^ s
-let sig_var s = "S" ^ s
-let at_last var = "L" ^ var
+type erl_id = 
+  | EIConst of string 
+  | EIFun of string * int
+  | EIVar of string
+  | EISigVar of string
+  | EILast of erl_id
+
+let string_of_eid ?(raw=true) = function
+  | EIConst(id) -> "(const_" ^ id ^ "())"
+  | EIFun(id, n) -> (if raw then "fun_" ^ id
+                            else "fun ?MODULE:fun_" ^ id ^ "/" ^ string_of_int n)
+  | EIVar(id) -> (match id with
+    | "_" -> "_"
+    | s -> "V" ^ s)
+  | EISigVar(id) -> "S" ^ id
+  | EILast(EISigVar(id)) -> "LS" ^ id
+  | EILast(EIConst(id)) | EILast(EIFun(id, _)) | EILast(EIVar(id)) ->
+    (raise (AtLastError(id ^ " is not node")))
+  | EILast(EILast _) ->
+    (raise (AtLastError("@last operator cannot be applied twice, make another delay node")))
 
 let send i e = 
   let expr = match !config.mess with
@@ -53,10 +67,10 @@ let erlang_of_expr env e =
     | EConst (CInt i)  -> string_of_int i
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
     | EConst (CChar c) -> "?" ^ Char.escaped c
-    | EId id -> try_find id env
-    | EAnnot (id, ALast) -> at_last (try_find id env)
+    | EId id -> string_of_eid ~raw:false (try_find id env)
+    | EAnnot (id, ALast) -> string_of_eid (EILast(try_find id env))
     | EApp (id, es) -> (* workaround *)
-      func id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
+      string_of_eid (try_find id env) ^ "(" ^ (concat_map "," (f env) es) ^ ")"
     | EBin (BCons, hd, tl) ->
       "[" ^ f env hd ^ "|" ^ f env tl ^ "]"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
@@ -71,9 +85,9 @@ let erlang_of_expr env e =
       | UNeg -> "-" ^ f env e
       | UInv -> "(bnot " ^ f env e ^ ")") 
     | ELet (binders, e) -> 
-      let bid = List.map (fun (i,_,_) -> var i) binders in
+      let bid = List.map (fun (i,_,_) -> string_of_eid (EIVar(i))) binders in
       let bex = List.map (fun (_,e,_) -> f env e) binders in
-      let newenv = List.fold_left (fun env (i,_,_) -> M.add i (var i) env) env binders in
+      let newenv = List.fold_left (fun env (i,_,_) -> M.add i (EIVar(i)) env) env binders in
       "(case {" ^ String.concat "," bex ^ "} of " ^ 
       "{" ^ String.concat "," bid ^ "} -> " ^ f newenv e ^ " end)"
     | EIf(c, a, b) -> 
@@ -83,14 +97,14 @@ let erlang_of_expr env e =
     | ETuple es ->
       "{" ^ (concat_map "," (f env) es) ^ "}"
     | EFun (args, e) ->
-      let newenv = List.fold_left (fun env i -> M.add i (var i) env) env args in
-      "(" ^ concat_map "," var args ^ ") -> " ^ f newenv e
+      let newenv = List.fold_left (fun env i -> M.add i (EIVar(i)) env) env args in
+      "(" ^ concat_map "," (fun i -> string_of_eid (EIVar i)) args ^ ") -> " ^ f newenv e
     | ECase(m, list) -> 
       let rec pat = function
         | PWild -> ("_", [])
         | PNil  -> ("[]", [])
         | PConst c -> (f env (EConst c), [])
-        | PVar v -> (var v, [v])
+        | PVar v -> (string_of_eid (EIVar v), [v])
         | PTuple ts -> 
           let (s, vs) = List.split (List.map pat ts) in
           ("{" ^ (String.concat "," s) ^ "}", List.flatten vs) 
@@ -100,7 +114,7 @@ let erlang_of_expr env e =
           ("[" ^ hdt ^ "|" ^ tlt ^ "]", hdbinds @ tlbinds) in
       let body (p, e) =
         let (ps, pvs) = pat p in
-        let newenv = List.fold_left (fun e i -> M.add i (var i) e) env pvs in
+        let newenv = List.fold_left (fun e i -> M.add i (EIVar i) e) env pvs in
         ps ^ " -> " ^ f newenv e
       in
       "(case " ^ f env m ^ " of " ^
@@ -142,8 +156,8 @@ let in_node deps id =
 let def_node deps env (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
-    List.map (fun id -> id ^ " := " ^ sig_var id) cs @
-    List.map (fun id -> "{last, " ^ id ^ "} := " ^ at_last (sig_var id)) ls)
+    List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
+    List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
   let update n = 
     match (if dep.is_output then "out" :: dep.output else dep.output) with
@@ -189,11 +203,11 @@ let def_node deps env (id, init, expr) =
             "], Received, NHeap), NLast, NDeferred).\n"
 
 let def_const env (id, e) =
-  const id ^ " -> " ^ erlang_of_expr env e ^ "."
+  (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
 
 let def_fun env (id, body) = match body with
-  | EFun(_, _) ->
-    func id ^ erlang_of_expr env body ^ "."
+  | EFun(a, _) ->
+    (string_of_eid (EIFun (id, -1))) ^ erlang_of_expr env body ^ "."
   | _ -> assert false
 
 let init_values x ti =
@@ -247,18 +261,25 @@ let of_xmodule x ti template opt =
   (match Dependency.find_loop x.source dep with
     | [] -> ()
     | loops -> raise (InfiniteLoop(loops)));
+  let user_funs = 
+     List.map (fun (i,_) -> (i, EIConst i)) x.const @
+     List.map (function | (i, EFun(args, _)) -> (i, EIFun (i, List.length args))
+               | _ -> assert false) x.func in
   let attributes = 
-    [[("main", 0)]; [("out", 0)];
+    [[("main", 0)]; [("out", 0); ("in", 0)];
+     List.map (fun (_, e) -> (string_of_eid e,
+                match e with | EIFun(_, n) -> n
+                             | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
      List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
     ^ "]).") attributes) in
-  let env = List.fold_left (fun m (i,_) -> M.add i (const i) m) M.empty x.const in
+  let env = List.fold_left (fun m (i,e) -> M.add i e m) M.empty user_funs in
   let env_with_nodes =
     List.map (fun (i, _, _) -> i) x.node @ x.source |>
-    List.fold_left (fun m i -> M.add i (sig_var i) m) env in
+    List.fold_left (fun m i -> M.add i (EISigVar i) m) env in
   let inits = (init_values x ti) in
   String.concat "\n\n" (
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
