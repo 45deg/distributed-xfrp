@@ -2,7 +2,7 @@ module List
 in
   a : Int
 out 
-  ox : [Int]
+  o : [Int]
 use Std
 
 node init[[]] o = a :: o@last
