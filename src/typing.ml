@@ -197,10 +197,10 @@ let rec is_concrete = function
     -> List.for_all is_concrete ts
   | _ -> true
 
-let infer_defs level defs env =
+let infer_defs defs env =
   let (ids, exprs) = List.split defs in
   let exprs_t = List.map (fun (id,t) -> 
-    try infer env (level + 1) t
+    try infer env 1 t
     with | TypeError(s) -> 
       raise (TypeError("For " ^ id ^ ", " ^ s))) defs in
   let annots = List.map (fun id -> (id,Module.M.find id env)) ids in
@@ -211,20 +211,20 @@ let infer_defs level defs env =
       raise (TypeError("For " ^ id ^ ", " ^ s))
   ) annots exprs_t
     (fun (_, t) -> string_of_type t) (string_of_type);
-  let gen_ts = List.map (generalize level) exprs_t in
+  let gen_ts = List.map (generalize 0) exprs_t in
   Typeinfo.extend_all env ids gen_ts
 
 let make_env default =
   let open Module in
   M.map (function 
   | TAConst (Some (t)) -> t
-  | TAConst None       -> gen_var 0
+  | TAConst None       -> gen_var 1
   | TAFun (at, rt)     ->
     let default = function | Some(t) -> t
                            | None    -> gen_var 1 in
     TFun(List.map default at, default rt)
   | TANode  (Some (t)) -> t
-  | TANode  None       -> gen_var 2
+  | TANode  None       -> gen_var 1
   ) default
 
 let check_init env n =
@@ -232,7 +232,7 @@ let check_init env n =
     match init_opt with 
     | Some (init) -> begin
       let ty = Typeinfo.find id env in
-      let init_ty = infer env 2 init in
+      let init_ty = infer env 1 init in
       try
         unify ty init_ty
       with | TypeError(s) -> 
@@ -248,12 +248,17 @@ let type_module program =
   let env = make_env program.typeinfo in
   let { const = c; func = f; node = n } = program in
   let result = env |>
-  infer_defs 0 c |>
-  infer_defs 1 f |>
-  infer_defs 2 (List.map (fun (i,_,e) -> (i,e)) n) in
+  infer_defs c |>
+  infer_defs f |>
+  infer_defs (List.map (fun (i,_,e) -> (i,e)) n) in
   check_init result n;
   if List.for_all (fun (i, _, _) -> is_concrete (Typeinfo.find i result)) n then
     (* check all nodes are concrete type. *)
     result
   else 
-    raise (TypeError("Generic types remain: " ^ Typeinfo.string_of_ti env))
+    raise (TypeError("Generic types remain: " ^ 
+      (n |> List.map (fun (i, _, _) -> (i, Typeinfo.find i result))
+         |> List.filter (fun (_, t) -> not (is_concrete t))
+         |> List.map (fun (i,t) -> "(" ^ i ^ ":" ^ string_of_type t ^ ")")
+         |> String.concat ", ")
+    ))
