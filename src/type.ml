@@ -36,6 +36,7 @@ let string_of_type ty =
   | TChar -> "Char"
   | TInt -> "Int"
   | TFloat -> "Float"
+  | TList(t) -> "[" ^ f t ^ "]"
   | TTuple(ts) -> "(" ^ String.concat ", " (List.map f ts) ^ ")"
   | TFun(args, ret) -> "(" ^ String.concat ", " (List.map f args) ^ ") -> " ^ f ret
   | TVar {contents = TVBound ty}

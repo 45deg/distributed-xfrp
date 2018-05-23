@@ -31,6 +31,8 @@ let rec adjust_level id level = function
        adjust_level id level ret
   | TTuple(ts)
     -> List.iter (adjust_level id level) ts
+  | TList(t)
+    -> adjust_level id level t
   | _ -> ()
 
 let rec unify t1 t2 = 
@@ -43,6 +45,8 @@ let rec unify t1 t2 =
     | TFloat, TFloat -> ()
     | TTuple(ts1), TTuple(ts2)
       -> iter2ty unify ts1 ts2
+    | TList(t1), TList(t2)
+      -> unify t1 t2
     | TFun(a1, r1), TFun(a2, r2)
       -> iter2ty unify a1 a2;
          unify r1 r2
@@ -60,6 +64,8 @@ let rec generalize level = function
     TFun(List.map (generalize level) args, generalize level ret)
   | TTuple(ts) ->
     TTuple(List.map (generalize level) ts)
+  | TList(t) ->
+    TList(generalize level t)
   | TVar {contents = TVFree(id, other_level)} as t 
     -> if other_level > level
         then TVar (ref (TVGeneric id))
@@ -82,9 +88,11 @@ let instantiate level ty =
       end
     | TVar {contents = TVFree _} -> ty
     | TFun(args, ret) ->
-        TFun(List.map f args, f ret)
+      TFun(List.map f args, f ret)
     | TTuple(xs) ->
-        TTuple(List.map f xs)
+      TTuple(List.map f xs)
+    | TList(t) ->
+      TList(f t)
     | _ -> ty
   in
   f ty
@@ -144,12 +152,19 @@ let rec infer env level = function
   | EBin(b, e1, e2) ->
     let t1 = infer env level e1 in
     let t2 = infer env level e2 in
-    unify t1 t2; 
     (match b with
-      | BLt | BLte | BGt | BGte | BEq | BNe | BLAnd | BLOr -> TBool
-      | _ -> t1)
+      | BCons ->
+        unify (TList(t1)) t2; t2
+      | BLt | BLte | BGt | BGte | BEq | BNe | BLAnd | BLOr -> 
+        unify t1 t2; TBool
+      | _ -> 
+        unify t1 t2; t1)
   | EUni(o, e) ->
     infer env level e
+  | EList(es) ->
+    TList(List.fold_left (fun acc e -> 
+            unify acc (infer env level e); acc
+          ) (gen_var level) es)
   | ETuple(es) ->
     TTuple(List.map (infer env level) es)
   | EIf(c, a, b) ->
@@ -195,6 +210,8 @@ let rec is_concrete = function
     -> true (* ignore function type *)
   | TTuple(ts)
     -> List.for_all is_concrete ts
+  | TList(t)
+    -> is_concrete t
   | _ -> true
 
 let infer_defs defs env =
