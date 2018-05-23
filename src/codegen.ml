@@ -88,11 +88,16 @@ let erlang_of_expr env e =
     | ECase(m, list) -> 
       let rec pat = function
         | PWild -> ("_", [])
+        | PNil  -> ("[]", [])
         | PConst c -> (f env (EConst c), [])
         | PVar v -> (var v, [v])
         | PTuple ts -> 
           let (s, vs) = List.split (List.map pat ts) in
-          ("{" ^ (String.concat "," s) ^ "}", List.flatten vs) in
+          ("{" ^ (String.concat "," s) ^ "}", List.flatten vs) 
+        | PCons (hd, tl) ->
+          let (hdt, hdbinds) = pat hd in
+          let (tlt, tlbinds) = pat tl in
+          ("[" ^ hdt ^ "|" ^ tlt ^ "]", hdbinds @ tlbinds) in
       let body (p, e) =
         let (ps, pvs) = pat p in
         let newenv = List.fold_left (fun e i -> M.add i (var i) e) env pvs in

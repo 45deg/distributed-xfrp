@@ -33,8 +33,10 @@ type binop
 
 type pattern
   = PWild
+  | PNil
   | PConst of const
   | PVar of id
+  | PCons of pattern * pattern
   | PTuple of pattern list
 
 type expr 
@@ -74,9 +76,11 @@ let rec string_of_const = function
   | CChar c -> String.make 1 c
 
 let rec string_of_pat = function
+  | PNil -> "[]"
   | PWild -> "_"
   | PConst c -> string_of_const c
   | PVar id -> id
+  | PCons(hd, tl) -> string_of_pat hd ^ "::" ^ string_of_pat tl
   | PTuple t -> List.map string_of_pat t |> String.concat ","
 
 let rec string_of_expr = function

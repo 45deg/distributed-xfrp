@@ -174,6 +174,7 @@ case_body:
 
 pattern:
   | prim_pattern { $1 }
+  | hd = pattern COLON2 tl = pattern { PCons(hd, tl) }
   | LPAREN ps = separated_list(COMMA, pattern) RPAREN
     { match ps with
       | [] -> PConst(CUnit)
@@ -187,3 +188,4 @@ prim_pattern:
       | _   -> PVar($1)
     }
   | constant { PConst($1) }
+  | LBRACKET RBRACKET { PNil }

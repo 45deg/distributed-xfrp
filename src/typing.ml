@@ -180,11 +180,17 @@ let rec infer env level = function
   | ECase(m, bodies) -> 
     let rec type_of_pattern = function
     | PWild -> (gen_var (level + 1), [])
+    | PNil  -> (TList(gen_var (level + 1)), [])
     | PConst c -> (type_of_const c, [])
     | PVar v -> let vt = gen_var (level + 1) in (vt, [(v, vt)])
     | PTuple ps -> 
       let (ts, binds) = List.split (List.map type_of_pattern ps) in
       (TTuple ts, List.flatten binds)
+    | PCons(hd, tl) -> 
+      let (hdt, hdbinds) = type_of_pattern hd in
+      let (tlt, tlbinds) = type_of_pattern tl in
+      unify (TList(hdt)) tlt;
+      (TList(hdt), hdbinds @ tlbinds)
     in
     let rec infer_bodies mt = function
     | [] -> TUnit
