@@ -90,7 +90,8 @@ let rec string_of_expr = function
       | BShR -> "<<" | BLt -> "<"    | BLte -> "<="
       | BGt -> ">"   | BGte -> ">="  | BEq -> "=="
       | BNe -> "!="  | BAnd -> "&"   | BXor -> "^"
-      | BOr -> "|"   | BLAnd -> "&&" | BLOr -> "||" ) ^ " " ^ string_of_expr e2
+      | BOr -> "|"   | BLAnd -> "&&" | BLOr -> "||" 
+      | BCons -> "::") ^ " " ^ string_of_expr e2
   | EUni (op, e) -> (match op with 
     | UNot -> "!" 
     | UNeg -> "-" 
@@ -101,6 +102,8 @@ let rec string_of_expr = function
     ^ " in " ^ string_of_expr e
   | EIf(c, a, b) ->
     "if " ^ string_of_expr c ^ " then " ^ string_of_expr a ^ " else " ^ string_of_expr b
+  | EList es ->
+    "[" ^ String.concat "," (List.map string_of_expr es) ^ "]"
   | ETuple es ->
     "(" ^ String.concat "," (List.map string_of_expr es) ^ ")"
   | EFun (args, e) ->
