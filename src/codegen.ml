@@ -57,13 +57,15 @@ let erlang_of_expr env e =
     | EAnnot (id, ALast) -> at_last (try_find id env)
     | EApp (id, es) -> (* workaround *)
       func id ^ "(" ^ (concat_map "," (f env) es) ^ ")"
+    | EBin (BCons, hd, tl) ->
+      "[" ^ f env hd ^ "|" ^ f env tl ^ "]"
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
         | BMul -> " * "   | BDiv -> " / "        | BMod -> " rem "
         | BAdd -> " + "   | BSub -> " - "        | BShL -> " bsl "
         | BShR -> " bsr " | BLt -> " < "         | BLte -> " <= "
         | BGt -> " > "    | BGte -> " >= "       | BEq -> " == "
         | BNe -> " /= "   | BAnd -> " band "     | BXor -> " bxor "
-        | BOr -> " bor "  | BLAnd -> " andalso " | BLOr -> " orelse " ) ^ f env e2 ^ ")"
+        | BOr -> " bor "  | BLAnd -> " andalso " | BLOr -> " orelse " | _ -> "") ^ f env e2 ^ ")"
     | EUni (op, e) -> (match op with 
       | UNot -> "(not " ^ f env e ^ ")"
       | UNeg -> "-" ^ f env e
@@ -76,6 +78,8 @@ let erlang_of_expr env e =
       "{" ^ String.concat "," bid ^ "} -> " ^ f newenv e ^ " end)"
     | EIf(c, a, b) -> 
       "(case " ^ f env c ^ " of true -> " ^ f env a ^ "; false -> " ^ f env b ^ " end)"
+    | EList es ->
+      "[" ^ (concat_map "," (f env) es) ^ "]"
     | ETuple es ->
       "{" ^ (concat_map "," (f env) es) ^ "}"
     | EFun (args, e) ->
