@@ -16,7 +16,7 @@ let reserved_word = S.of_list [
   LET CASE OF LAST TRUE FALSE
 
 %token
-  COMMA LBRACKET RBRACKET LPAREN RPAREN COLON
+  COMMA LBRACKET RBRACKET LPAREN RPAREN COLON COLON2
   SEMICOLON AT ARROW TILDE PLUS MINUS PERCENT ASTERISK
   SLASH XOR OR2 AND2 OR AND EQUAL2 NEQ LSHIFT LTE LT
   RSHIFT GTE GT BANG EQUAL
@@ -38,6 +38,7 @@ let reserved_word = S.of_list [
 %left AND
 %left EQUAL2 NEQ
 %left LT LTE GT GTE
+%right COLON2
 %left LSHIFT RSHIFT
 %left PLUS MINUS
 %left ASTERISK SLASH PERCENT
@@ -75,6 +76,7 @@ expr:
   | id = ID LPAREN args = args RPAREN { EApp(id, args) }
   | expr binop expr { EBin($2, $1, $3) }
   | uniop expr %prec prec_uni { EUni($1, $2) }
+  | LBRACKET args = args RBRACKET { EList(args) }
   | LPAREN xs = args RPAREN 
     { match xs with
         | []   -> EConst(CUnit)
@@ -99,6 +101,7 @@ binop:
   | MINUS    { BSub }
   | LSHIFT   { BShL } 
   | RSHIFT   { BShR }
+  | COLON2   { BCons }
   | LT       { BLt }
   | LTE      { BLte }
   | GT       { BGt }
@@ -148,6 +151,8 @@ type_spec:
     { t }
   | LPAREN tpl = separated_nonempty_list(COMMA, type_spec) RPAREN
     { TTuple(tpl) }
+  | LBRACKET t = type_spec RBRACKET
+    { TList(t) }
 
 prim_type_spec:
   | t = ID

@@ -60,6 +60,7 @@ rule read = parse
   | '('              { LPAREN }
   | ')'              { RPAREN }
   | ':'              { COLON }
+  | "::"             { COLON2 }
   | ';'              { SEMICOLON }
   | '@'              { AT }
   | "->"             { ARROW }

@@ -5,6 +5,7 @@ type t =
   | TInt
   | TFloat
   | TTuple of t list
+  | TList of t
   | TFun of t list * t
   | TVar of tvar ref
 and tvar =

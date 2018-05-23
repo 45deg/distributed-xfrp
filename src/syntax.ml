@@ -29,6 +29,7 @@ type binop
   | BOr
   | BLAnd
   | BLOr
+  | BCons
 
 type pattern
   = PWild
@@ -44,6 +45,7 @@ type expr
   | EBin of binop * expr * expr
   | EUni of uniop * expr
   | ETuple of expr list
+  | EList of expr list
   | EIf of expr * expr * expr
   | ELet of (id * expr * Type.t option) list * expr
   | ECase of expr * (pattern * expr) list
