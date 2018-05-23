@@ -48,7 +48,6 @@ let compile in_c =
     match !mode with
       | Erlang ->
         let ti = Typing.type_module xmod in
-        prerr_endline (Typeinfo.string_of_ti ti);
         Codegen.of_xmodule xmod ti template !opt
       | Dot -> 
         Graphviz.of_xmodule xmod
