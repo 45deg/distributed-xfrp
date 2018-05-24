@@ -2,7 +2,20 @@ module List
 in
   a : Int
 out 
-  o : [Int]
+  o : [(Int, Int)]
 use Std
 
-node init[[]] o = a :: o@last
+fun assoc_incr(target, list, found) = case target of
+  (word, n) -> 
+    case list of
+      [] -> if found then [] else [(word, n)];
+      (x, y) :: xs ->
+        if x == word then
+          (x, y + n) :: assoc_incr(target, xs, True)
+        else
+          (x, y) :: assoc_incr(target, xs, found);
+  ;
+
+node map = (a, 1)
+
+node init[[]] o = assoc_incr(map, o@last, False)

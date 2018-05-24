@@ -2,8 +2,8 @@ out() ->
     receive M -> io:format("~p ~n",[M]) end,
     out().
 
-in(I) ->
-    a ! I,
-    timer:sleep(1000),
+in() ->
+    a ! rand:uniform(10),
+    timer:sleep(100),
     io:format("~n", []),
-    in(I + 1).
+    in().
