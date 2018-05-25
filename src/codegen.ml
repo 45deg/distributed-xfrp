@@ -218,6 +218,7 @@ let init_values x ti =
     | TFloat -> EConst(CFloat(0.0))
     | TChar -> EConst(CBool(false))
     | TTuple ts -> ETuple(List.map of_type ts)
+    | TList t -> EList([])
     | _ -> assert false in
   let node_init = List.fold_left (fun m -> function 
     | (id, Some(init), _) -> M.add id init m
