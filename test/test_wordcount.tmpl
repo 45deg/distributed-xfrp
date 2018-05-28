@@ -1,0 +1,12 @@
+out() ->
+    receive M -> io:format("~p ~n",[M]) end,
+    out().
+
+gen_list(_,0) -> [];
+gen_list(M,N) -> [rand:uniform(M)|gen_list(M,N-1)].
+
+in() ->
+    in1 ! gen_list(10,10),
+    in2 ! gen_list(10,10),
+    timer:sleep(1000),
+    in().

@@ -1,0 +1,42 @@
+module WordCount
+in
+  in1 : [Int],
+  in2 : [Int]
+out 
+  o : [(Int, Int)]
+use Std
+
+fun count(arr) =
+  case arr of
+    [] -> [];
+    x :: xs -> assoc_incr(x, count(xs));
+
+fun assoc_incr(key, list) =
+  case list of
+    [] -> [(key, 1)];
+    (x, y) :: xs ->
+      if x > key then
+        (key, 1) :: (x, y) :: xs
+      else if x == key then
+        (x, y + 1) :: xs
+      else
+        (x, y) :: assoc_incr(key, xs);
+
+fun assoc_merge(xs, ys) = case (xs, ys) of
+  ([], bs) -> bs;
+  (as, []) -> as;
+  ((a, an) :: as, (b, bn) :: bs) ->
+    if a < b then 
+      (a, an) :: assoc_merge(as,ys)
+    else if a == b then 
+      (a, an + bn) :: assoc_merge(as, bs)
+    else 
+      (b, bn) :: assoc_merge(xs,bs);
+
+node init[[]] map1 = count(in1)
+node init[[]] map2 = count(in2)
+
+node init[[]] reduce1 = assoc_merge(map1, reduce1@last)
+node init[[]] reduce2 = assoc_merge(map2, reduce2@last)
+
+node o = assoc_merge(reduce1, reduce2)
