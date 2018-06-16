@@ -174,36 +174,33 @@ let def_node deps env (id, init, expr) =
   id ^ "(Heap0, Last0, Deferred0, Latest0) ->\n" ^ 
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p, ~p)~n\", [Heap0, Last0, Deferred0, Latest0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-  indent 1 "{NHeap, NLast, NDeferred, NLatest} = lists:foldl(fun (E, {Heap, Last, Deferred, Latest}) -> \n" ^
+  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
       let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
       (sub dep.input_current currents, sub dep.input_last lasts)
     in
-    let latest =
-      "Latest#{ " ^ root ^ " => max(RootV, maps:get(" ^ root ^ ", Latest, 0)) }"
-    in
-    indent 3 "{ {" ^ root ^ ", RootV} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
+    indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], " ^ latest ^"};\n"
+      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
     | others ->
       indent 4 "case Last of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], " ^ latest ^"};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred], " ^ latest ^"}\n" ^
+      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Heap, Last, Deferred, Latest}\n" ^
+  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0, Latest0}, HL),\n" ^
-  indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
+  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "{Received,{RvId,RvVer}} = receive {_,_,V} = M -> {M,V} end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred, NLatest).\n"
+            "], Received, NHeap), NLast, NDeferred, Latest0#{ RvId => max(RvVer, maps:get(RvId, Latest0, 0)) }).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
