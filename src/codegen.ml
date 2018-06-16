@@ -173,7 +173,7 @@ let def_node deps env (id, init, expr) =
   (* main node function *)
   id ^ "(Heap0, Last0, Deferred0, Latest0) ->\n" ^ 
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p, ~p)~n\", [Heap0, Last0, Deferred0, Latest0]),\n" else "") ^
-  indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
+  indent 1 "HL = trim(Heap0, Last0, Latest0),\n" ^
   indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
@@ -196,11 +196,16 @@ let def_node deps env (id, init, expr) =
   ) dep.root_group ^
   indent 3 "_ -> {Heap, Last, Deferred}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "end, {maps:from_list(HL), Last0, Deferred0}, HL),\n" ^
   indent 1 "{Received,{RvId,RvVer}} = receive {_,_,V} = M -> {M,V} end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
-  indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred, Latest0#{ RvId => max(RvVer, maps:get(RvId, Latest0, 0)) }).\n"
+  indent 1 "case maps:get(RvId, Latest0, 0) of\n" ^
+  indent 2 "MaxVer when MaxVer - RvVer > 3 ->\n" ^
+  indent 3 id ^ "(NHeap, NLast, NDeferred, Latest0);\n" ^
+  indent 2 "MaxVer -> \n" ^
+  indent 3 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+            "], Received, NHeap), NLast, NDeferred, Latest0#{ RvId => max(RvVer, MaxVer) })\n" ^
+  indent 1 "end."
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -226,10 +231,20 @@ let init_values x ti =
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
 let lib_funcs = String.concat "\n" [
-  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
-  indent 1 "V1 == V2 -> K1 < K2;";
-  indent 1 "true -> V1 < V2";
-  "end end).";
+  "trim(HL, Last, Latest, Thunk) ->";
+  indent 1 "case HL of";
+  indent 2 "[] -> Thunk;";
+  indent 2 "[{{I,V}, Map} = X|Xs] ->";
+  indent 3 "case maps:get(I, Latest, 0) - V > 3 of";
+  indent 4 "true -> [{{I,V}, maps:merge(Last, Map)}|Thunk];";
+  indent 4 "false -> trim(Xs, Last, Latest, [X|Thunk])";
+  indent 3 "end";
+  indent 1 "end.";
+  "trim(Heap, Last, Latest) ->";
+  indent 1 "trim(lists:sort(fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
+  indent 2 "V1 == V2 -> K1 < K2;";
+  indent 2 "true -> V1 > V2";
+  indent 1 "end end, maps:to_list(Heap)), Last, Latest, []).";
   "heap_update(Current, Last, {Id, RValue, {RVId, RVersion}}, Heap) ->";
   indent 1 "H1 = case lists:member(Id, Current) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Heap);";
