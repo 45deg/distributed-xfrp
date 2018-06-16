@@ -13,9 +13,10 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
+  bufsize: int option;
 }
 
-let config = ref { debug = false; mess = None; drop = None }
+let config = ref { debug = false; mess = None; drop = None; bufsize = None }
 
 let try_find id m = begin
   try M.find id m with 
@@ -200,7 +201,7 @@ let def_node deps env (id, init, expr) =
   indent 1 "{Received,{RvId,RvVer}} = receive {_,_,V} = M -> {M,V} end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 "case maps:get(RvId, Latest0, 0) of\n" ^
-  indent 2 "MaxVer when MaxVer - RvVer > 3 ->\n" ^
+  indent 2 "MaxVer when ?IS_OLD(MaxVer,RvVer) ->\n" ^
   indent 3 id ^ "(NHeap, NLast, NDeferred, Latest0);\n" ^
   indent 2 "MaxVer -> \n" ^
   indent 3 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
@@ -230,12 +231,16 @@ let init_values x ti =
     | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
-let lib_funcs = String.concat "\n" [
+let lib_funcs () = 
+  String.concat "\n" [
+  (match !config.bufsize with
+   | Some(n) -> "-define(IS_OLD(Vmax,V), Vmax - V < " ^ string_of_int n ^ ")."
+   | None    -> "-define(IS_OLD(Vmax,V), false).");
   "trim(HL, Last, Latest, Thunk) ->";
   indent 1 "case HL of";
   indent 2 "[] -> Thunk;";
   indent 2 "[{{I,V}, Map} = X|Xs] ->";
-  indent 3 "case maps:get(I, Latest, 0) - V > 3 of";
+  indent 3 "case ?IS_OLD(maps:get(I, Latest, 0), V) of";
   indent 4 "true -> [{{I,V}, maps:merge(Last, Map)}|Thunk];";
   indent 4 "false -> trim(Xs, Last, Latest, [X|Thunk])";
   indent 3 "end";
@@ -301,7 +306,7 @@ let of_xmodule x ti template opt =
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
-    lib_funcs ::
+    lib_funcs () ::
     List.map (def_const env) x.const
     @ List.map (def_fun env) x.func
     @ main dep x inits env ::
