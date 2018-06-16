@@ -234,14 +234,14 @@ let init_values x ti =
 let lib_funcs () = 
   String.concat "\n" [
   (match !config.bufsize with
-   | Some(n) -> "-define(IS_OLD(Vmax,V), Vmax - V < " ^ string_of_int n ^ ")."
+   | Some(n) -> "-define(IS_OLD(Vmax,V), Vmax - V > " ^ string_of_int n ^ ")."
    | None    -> "-define(IS_OLD(Vmax,V), false).");
   "trim(HL, Last, Latest, Thunk) ->";
   indent 1 "case HL of";
   indent 2 "[] -> Thunk;";
   indent 2 "[{{I,V}, Map} = X|Xs] ->";
   indent 3 "case ?IS_OLD(maps:get(I, Latest, 0), V) of";
-  indent 4 "true -> [{{I,V}, maps:merge(Last, Map)}|Thunk];";
+  indent 4 "true -> trim(Xs, Last, Latest, [{{I,V}, maps:merge(Last, Map)}|Thunk]);";
   indent 4 "false -> trim(Xs, Last, Latest, [X|Thunk])";
   indent 3 "end";
   indent 1 "end.";
