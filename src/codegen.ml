@@ -13,9 +13,10 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
+  realign: int;
 }
 
-let config = ref { debug = false; mess = None; drop = None }
+let config = ref { debug = false; mess = None; drop = None; realign = 0; }
 
 let try_find id m = begin
   try M.find id m with 
