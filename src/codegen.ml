@@ -135,12 +135,26 @@ let main deps xmod inits env =
     else
       let (init, fun_id) = (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
-      "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
+      "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^ 
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}, [], #{}])),\n"
+      ^ "}, #{}, [], #{" ^ 
+        concat_map ", " (fun s -> s ^ " => -1") node.root
+      ^ "}])),\n"
   ) (M.bindings deps) in
   "main() -> \n" ^
   spawn ^
+  indent 1 "register(out_node, spawn(?MODULE, out_node, [[], #{" ^
+    concat_map ", " (fun (s, c) -> s ^ " => {0,0," ^ string_of_int c ^ "}") (
+      List.map (fun id -> (try_find id deps).root) xmod.sink |>
+      List.flatten |>
+      List.sort compare |>
+      List.fold_left (fun acc id -> match acc with
+        | [] -> [(id, 1)]
+        | (i, num) :: rest when i == id -> (id, num + 1) :: rest
+        | _ -> (id, 1) :: acc
+      ) []
+  )
+   ^ "}])),\n" ^
   indent 1 "register(out, spawn(?MODULE, out, [])),\n" ^
   indent 1 "in()."
 
@@ -154,6 +168,23 @@ let in_node deps id =
   "end,";
   id ^ "(Version + 1)."]
 
+let out_node () = String.concat "\n" @@
+  "out_node(Buffer0, Latest0) ->" :: List.map (indent 1) [
+    (if !config.debug then indent 1 "io:format(standard_error, \"out_node(~p,~p)~n\", [Buffer0, Latest0])," else "") ^
+    "receive M -> ";
+    "{NBuffer, NLatest} = lists:foldl(fun ( {_, _, {RV,RI}} = H, { Buffer, Latest } ) -> case Latest of";
+    indent 1 "#{ RV := {RI, Cnt, Num} } ->";
+    indent 2 "out ! H,";
+    indent 2 "case Cnt + 1 of";
+    indent 3 "Num -> { Buffer, Latest#{ RV => {RI + 1, 0, Num} } };";
+    indent 3 "_ -> { Buffer, Latest#{ RV => {RI, Cnt + 1, Num} } }";
+    indent 2 "end;";
+    indent 1 "_ -> { [H|Buffer], Latest }";
+    "end end, {[], Latest0}, [M|Buffer0]),";
+    "out_node(lists:reverse(NBuffer), NLatest)";
+    "end."
+  ]
+
 let def_node deps env (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
@@ -161,7 +192,7 @@ let def_node deps env (id, init, expr) =
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
   let update n = 
-    match (if dep.is_output then "out" :: dep.output else dep.output) with
+    match (if dep.is_output then (if !config.realign == 0 then "out" else "out_node") :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
       | output ->
         indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
@@ -176,13 +207,17 @@ let def_node deps env (id, init, expr) =
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p,~p)~n\", [Heap0, Last0, Deferred0, Latest0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
   indent 1 "{NHeap, NLast, NDeferred, NLatest} = lists:foldl(fun (E, {Heap, Last, Deferred, Latest}) -> \n" ^
-  indent 2 "case E of\n" ^
+  indent 2 "case {E, Latest} of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
       let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
       (sub dep.input_current currents, sub dep.input_last lasts)
     in
-    indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
+    (if !config.realign == 1 then
+      indent 3 "{{{" ^ root ^ ", Vrcv} = Version, " ^ bind (currents, lasts) ^ " = Map}, #{ " ^ root ^ " := Vlst }} when Vrcv == Vlst + 1 ->\n" 
+    else 
+      indent 3 "{{{" ^ root ^ ", Vrcv} = Version, " ^ bind (currents, lasts) ^ " = Map}, #{ " ^ root ^ " := Vlst }} ->\n")
+    ^
     match other_vars with
     | ([],[]) -> 
       update 4 ^
@@ -269,7 +304,7 @@ let of_xmodule x ti template opt =
      List.map (function | (i, EFun(args, _)) -> (i, EIFun (i, List.length args))
                | _ -> assert false) x.func in
   let attributes = 
-    [[("main", 0)]; [("out", 0); ("in", 0)];
+    [[("main", 0)]; [("out", 0); ("in", 0); ("out_node", 2)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
@@ -297,5 +332,6 @@ let of_xmodule x ti template opt =
        | None   -> [in_func x.source; out_func x.sink])
     (* outfunc *)
     @ (List.map (in_node dep) x.source)
+    @ [out_node ()]
     @ List.map (def_node dep env_with_nodes) x.node
   )
