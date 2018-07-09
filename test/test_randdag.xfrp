@@ -1,0 +1,30 @@
+module Randdag
+in
+  src : Int
+out 
+  dst : Int
+use Std
+
+node mg = ma + mc
+node md = mc
+node mi = mb + mc + md + mg
+node ml = mb + mc
+node mk = mc
+node mj = md + mh
+node mm = ma + mb + mf + ml
+node mn = ma + mc + mh + mj
+node mo = md + mf + mi + mj
+node ms = ma + mb + mi + mm
+node mt = ma + mf + mi + mj + ml + mm + mn
+node mq = mb + md + mi + mj
+node mr = mb + mc + md + me + mh + mj + mn + mo
+node mp = mg
+
+node mh = src
+node me = src
+node mf = src
+node ma = src
+node mc = src
+node mb = src
+
+node dst = mp + mr + mq + mt + ms + mk

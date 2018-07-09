@@ -1,0 +1,11 @@
+out() ->
+    receive {_,_,{_,I}} -> io:format("G|~p|~p~n",[I, now()]) end,
+    out().
+
+in() -> in(0).
+
+in(I) ->
+    src ! 1,
+    io:format("S|~p|~p~n", [I, now()]),
+    timer:sleep(10000),
+    in(I+1).
