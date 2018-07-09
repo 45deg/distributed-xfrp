@@ -136,7 +136,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}, []])),\n"
+      ^ "}, #{}, [], #{}])),\n"
   ) (M.bindings deps) in
   "main() -> \n" ^
   spawn ^
@@ -171,10 +171,10 @@ let def_node deps env (id, init, expr) =
         indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
-  id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
-  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
+  id ^ "(Heap0, Last0, Deferred0, Latest0) ->\n" ^ 
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p,~p)~n\", [Heap0, Last0, Deferred0, Latest0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+  indent 1 "{NHeap, NLast, NDeferred, NLatest} = lists:foldl(fun (E, {Heap, Last, Deferred, Latest}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
@@ -185,22 +185,22 @@ let def_node deps env (id, init, expr) =
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
+      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], setversion(Latest, Version)};\n"
     | others ->
       indent 4 "case Last of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
+      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], setversion(Latest, Version)};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred], setversion(Latest, Version)}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
+  indent 3 "_ -> {Heap, Last, Deferred, Latest}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "end, {Heap0, Last0, Deferred0, Latest0}, HL),\n" ^
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred).\n"
+            "], Received, NHeap), NLast, NDeferred, NLatest).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -238,7 +238,8 @@ let lib_funcs = String.concat "\n" [
 	indent 1 "case lists:member(Id, Last) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
-  indent 1 "end."
+  indent 1 "end.";
+  "setversion(Latest, {Vk, Vi}) -> Latest#{ Vk => Vi }."
 ]
 
 let in_func input = String.concat "\n" @@
@@ -272,7 +273,7 @@ let of_xmodule x ti template opt =
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
-     List.map (fun (i, _, _) -> (i, 3)) x.node]
+     List.map (fun (i, _, _) -> (i, 4)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
