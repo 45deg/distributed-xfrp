@@ -1,0 +1,73 @@
+module Reduce
+in
+  src : Int
+out 
+  dst : Int
+use Std
+
+node b0 = a0 + a20
+node b1 = a1 + a21
+node b2 = a2 + a22
+node b3 = a3 + a23
+node b4 = a4 + a24
+node b5 = a5 + a25
+node b6 = a6 + a26
+node b7 = a7 + a27
+node b8 = a8 + a28
+node b9 = a9 + a29
+node b10 = a10 + a30
+node b11 = a11 + a31
+node b12 = a12 + a32
+node b13 = a13 + a33
+node b14 = a14 + a34
+node b15 = a15 + a35
+node b16 = a16 + a36
+node b17 = a17 + a37
+node b18 = a18 + a38
+node b19 = a19 + a39
+node c0 = b0 + b5 + b10 + b15
+node c1 = b1 + b6 + b11 + b16
+node c2 = b2 + b7 + b12 + b17
+node c3 = b3 + b8 + b13 + b18
+node c4 = b4 + b9 + b14 + b19
+node dst = c0 + c1 + c2 + c3 + c4
+node a0 = src
+node a1 = src
+node a2 = src
+node a3 = src
+node a4 = src
+node a5 = src
+node a6 = src
+node a7 = src
+node a8 = src
+node a9 = src
+node a10 = src
+node a11 = src
+node a12 = src
+node a13 = src
+node a14 = src
+node a15 = src
+node a16 = src
+node a17 = src
+node a18 = src
+node a19 = src
+node a20 = src
+node a21 = src
+node a22 = src
+node a23 = src
+node a24 = src
+node a25 = src
+node a26 = src
+node a27 = src
+node a28 = src
+node a29 = src
+node a30 = src
+node a31 = src
+node a32 = src
+node a33 = src
+node a34 = src
+node a35 = src
+node a36 = src
+node a37 = src
+node a38 = src
+node a39 = src

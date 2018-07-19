@@ -7,6 +7,8 @@ pairs = []
 
 for line in sys.stdin: 
   [a,b,c] = line.split('|')
+  if a == 'S' or a == 'G':
+    continue
   pairs.append((int(a), b, int(c)))
 
 pairs = sorted(pairs, key=itemgetter(0))
