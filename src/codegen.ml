@@ -13,10 +13,10 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
-  realign: int;
+  realign: bool;
 }
 
-let config = ref { debug = false; mess = None; drop = None; realign = 0; }
+let config = ref { debug = false; mess = None; drop = None; realign = false; }
 
 let try_find id m = begin
   try M.find id m with 
@@ -137,9 +137,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^ 
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}, [], #{" ^ 
-        concat_map ", " (fun s -> s ^ " => -1") node.root
-      ^ "}])),\n"
+      ^ "}, #{}, []])),\n"
   ) (M.bindings deps) in
   "main() -> \n" ^
   spawn ^
@@ -193,7 +191,7 @@ let def_node deps env (id, init, expr) =
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
   let update n = 
-    match (if dep.is_output then (if !config.realign == 0 then "out" else "out_node") :: dep.output else dep.output) with
+    match (if dep.is_output then (if not !config.realign then "out" else "out_node") :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
       | output ->
         indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
@@ -204,41 +202,36 @@ let def_node deps env (id, init, expr) =
         indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
-  id ^ "(Heap0, Last0, Deferred0, Latest0) ->\n" ^ 
-  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p,~p)~n\", [Heap0, Last0, Deferred0, Latest0]),\n" else "") ^
-  (* indent 1 "io:format(\"~p|" ^ id ^ "|~p~n\", [erlang:system_time(), maps:size(Heap0)])," ^*)
+  id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-  indent 1 "{NHeap, NLast, NDeferred, NLatest} = lists:foldl(fun (E, {Heap, Last, Deferred, Latest}) -> \n" ^
-  indent 2 "case {E, Latest} of\n" ^
+  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+  indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
       let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
       (sub dep.input_current currents, sub dep.input_last lasts)
     in
-    (if !config.realign == 1 then
-      indent 3 "{{{" ^ root ^ ", Vrcv} = Version, " ^ bind (currents, lasts) ^ " = Map}, #{ " ^ root ^ " := Vlst }} when Vrcv == Vlst + 1 ->\n" 
-    else 
-      indent 3 "{{{" ^ root ^ ", Vrcv} = Version, " ^ bind (currents, lasts) ^ " = Map}, #{ " ^ root ^ " := Vlst }} ->\n")
-    ^
+      indent 3 "{{" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], setversion(Latest, Version)};\n"
+      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
     | others ->
       indent 4 "case Last of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), [], setversion(Latest, Version)};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred], setversion(Latest, Version)}\n" ^
+      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Heap, Last, Deferred, Latest}\n" ^
+  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0, Latest0}, HL),\n" ^
+  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred, NLatest).\n"
+            "], Received, NHeap), NLast, NDeferred).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -277,7 +270,6 @@ let lib_funcs = String.concat "\n" [
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
   indent 1 "end.";
-  "setversion(Latest, {Vk, Vi}) -> Latest#{ Vk => Vi }."
 ]
 
 let in_func input = String.concat "\n" @@
@@ -311,7 +303,7 @@ let of_xmodule x ti template opt =
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
-     List.map (fun (i, _, _) -> (i, 4)) x.node]
+     List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)

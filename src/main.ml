@@ -15,7 +15,7 @@ let opt = let open Codegen in ref {
   debug = false;
   mess = None;
   drop = None;
-  realign = 0;
+  realign = false;
 }
 
 let mode = ref Erlang
@@ -27,7 +27,7 @@ let speclist = [
   ("-debug", Arg.Unit(fun _ -> opt := { !opt with debug = true }), "Output function trace (experimental)");
   ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
   ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)");
-  ("-realign", Arg.Int(fun n -> opt := { !opt with realign = n }), " [0,1,2] Realignment mode (experimental)")
+  ("-realign", Arg.Unit(fun _ -> opt := { !opt with realign = true }), " Realignment flag (experimental)")
 ]
 
 let load_file f =
