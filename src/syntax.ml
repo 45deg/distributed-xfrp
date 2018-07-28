@@ -119,6 +119,10 @@ let rec string_of_expr = function
     let f (p, e) = string_of_pat p ^ " -> "^ string_of_expr e ^ "; " in
     "case " ^ string_of_expr m ^ " of " ^ String.concat "" (List.map f cls)
 
+let string_of_host = function
+  | Host(h) -> h
+  | Localhost -> "localhost"
+
 let string_of_definition defs = 
   let open Type in
   let str_ty = function | Some (t) -> string_of_type t
