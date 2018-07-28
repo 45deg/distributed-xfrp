@@ -3,14 +3,21 @@ open Syntax
 open Type
 
 module S = Set.Make(String);;
+module HM = Map.Make(struct type t = host let compare = compare end);;
 
 let reserved_word = S.of_list [
   "in";
   "out"
 ]
 
-let hostinfo = ref []
+let hostinfo = ref HM.empty
 let last_host = ref Localhost
+
+let update id host = 
+  last_host := host;
+  hostinfo := HM.update host (function 
+  | Some(l) -> Some(id :: l)
+  | None    -> Some([id])) !hostinfo
 
 %}
 
@@ -63,25 +70,22 @@ prog_module:
       out_node = outnodes;
       use = modules;
       definition = defs;
-      hostinfo = List.rev !hostinfo;
+      hostinfo = HM.bindings !hostinfo;
     } }
 
 in_nodes:
   | HOST id_and_type 
-    { last_host := Host($1); hostinfo := (!last_host, fst $2) :: !hostinfo; $2 }
+    { update (fst $2) (Host $1); $2 }
   | id_and_type 
-    { hostinfo := (!last_host, fst $1) :: !hostinfo; $1 }
+    { update (fst $1) !last_host; $1 }
 
 definition:
   | CONST it = id_and_type_opt EQUAL e = expr
     { Const(it, e) }
   | host = HOST NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { last_host := Host(host);
-      hostinfo := (!last_host, fst it) :: !hostinfo;
-      Node(it, init, e) }
+    { update (fst it) (Host host); Node(it, init, e) }
   | NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { hostinfo := (!last_host, fst it) :: !hostinfo;
-      Node(it, init, e) }
+    { update (fst it) !last_host; Node(it, init, e) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
     { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
 

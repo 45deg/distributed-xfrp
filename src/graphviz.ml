@@ -33,7 +33,6 @@ let of_xmodule xmod =
     indent 1 ("label=\"" ^ label ^ "\"; color=\"" ^ color ^ "\"; fontcolor=\"" ^ color ^ "\";") ::
     List.map (indent 1) nodes @
     ["}"] in
-  let hosts = List.sort_uniq compare (List.map fst xmod.hostinfo) in
   let edge (key, dep) =
     List.map (fun i -> 
       if (PairS.mem (i,key) loops) then
@@ -45,11 +44,12 @@ let of_xmodule xmod =
   in
   "digraph " ^ xmod.id ^ " {\n" ^
     (* concat_map "\n" (indent 1) (List.map def deps) ^ "\n\n" ^ *)
-    String.concat "\n" (List.mapi (fun i host -> 
+    String.concat "\n" (List.mapi (fun i (host, ids) -> 
       concat_map "\n" (indent 1) @@
-      def_subgraph ("cluster_" ^ string_of_int i) (string_of_host host) (List.nth colors (i mod 10))
-        (List.map (fun (_,i) -> def i) (List.filter (fun (h,_) -> compare h host == 0) xmod.hostinfo))
-    ) hosts) ^ "\n" ^
+      def_subgraph
+        ("cluster_" ^ string_of_int i) (string_of_host host)
+        (List.nth colors (i mod 10)) (List.map def ids)
+    ) xmod.hostinfo) ^ "\n" ^
     concat_map "\n" (indent 1) (List.map edge deps |> List.flatten) ^
     (*
     indent 1 "{ rank = source; " ^ String.concat "; " xmod.source ^ "; }\n" ^

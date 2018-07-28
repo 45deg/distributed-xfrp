@@ -15,7 +15,7 @@ type t = {
   func: (id * expr) list;
   node: (id * expr option * expr) list;
   typeinfo: tannot M.t;
-  hostinfo: (host * id) list;
+  hostinfo: (host * id list) list;
 }
 
 let collect defs = 

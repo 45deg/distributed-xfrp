@@ -153,6 +153,14 @@ let in_node deps id =
   "end,";
   id ^ "(Version + 1)."]
 
+let out_node nodes = String.concat "\n" @@
+  "out_???() ->" :: List.map (indent 1) [
+    "receive";
+    (concat_map ";\n" (fun i -> indent 1 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") nodes);
+    "end,";
+    "out_???()."
+  ]
+
 let def_node deps env (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (

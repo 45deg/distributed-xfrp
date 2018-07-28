@@ -66,7 +66,7 @@ type program = {
   out_node: id_and_type list;
   use: moduleid list;
   definition: definition list;
-  hostinfo: (host * id) list;
+  hostinfo: (host * id list) list;
 }
 
 exception InvalidId of string
