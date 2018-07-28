@@ -45,6 +45,9 @@ let compile in_c =
   try
     let program = Parser.prog_module Lexer.read lexbuf in
     let xmod = Module.of_program program in
+    print_endline (List.map (fun (t, i) ->
+      (match t with | Syntax.Host(h) -> h | Syntax.Localhost -> "localhost") ^ ":" ^ i
+    ) xmod.hostinfo |> String.concat ";");
     match !mode with
       | Erlang ->
         let ti = Typing.type_module xmod in

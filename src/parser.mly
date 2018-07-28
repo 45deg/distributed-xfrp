@@ -9,6 +9,9 @@ let reserved_word = S.of_list [
   "out"
 ]
 
+let hostinfo = ref []
+let last_host = ref Localhost
+
 %}
 
 %token
@@ -23,6 +26,7 @@ let reserved_word = S.of_list [
 
 %token <char> CHAR
 %token <string> ID
+%token <string> HOST
 %token <float> FLOAT
 %token <int> INT 
 %token EOF
@@ -48,7 +52,7 @@ let reserved_word = S.of_list [
 
 prog_module:
   | MODULE id = ID
-    IN innodes = separated_list(COMMA, id_and_type)
+    IN innodes = separated_list(COMMA, in_nodes)
     OUT outnodes = separated_list(COMMA, id_and_type)
     USE modules = separated_list(COMMA, ID)
     defs = nonempty_list(definition)
@@ -58,14 +62,26 @@ prog_module:
       in_node = innodes;
       out_node = outnodes;
       use = modules;
-      definition = defs
+      definition = defs;
+      hostinfo = List.rev !hostinfo;
     } }
+
+in_nodes:
+  | HOST id_and_type 
+    { last_host := Host($1); hostinfo := (!last_host, fst $2) :: !hostinfo; $2 }
+  | id_and_type 
+    { hostinfo := (!last_host, fst $1) :: !hostinfo; $1 }
 
 definition:
   | CONST it = id_and_type_opt EQUAL e = expr
     { Const(it, e) }
+  | host = HOST NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
+    { last_host := Host(host);
+      hostinfo := (!last_host, fst it) :: !hostinfo;
+      Node(it, init, e) }
   | NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { Node(it, init, e) }
+    { hostinfo := (!last_host, fst it) :: !hostinfo;
+      Node(it, init, e) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
     { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
 

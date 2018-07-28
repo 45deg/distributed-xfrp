@@ -14,7 +14,8 @@ type t = {
   const: (id * expr) list;
   func: (id * expr) list;
   node: (id * expr option * expr) list;
-  typeinfo: tannot M.t
+  typeinfo: tannot M.t;
+  hostinfo: (host * id) list;
 }
 
 let collect defs = 
@@ -44,5 +45,6 @@ let of_program program =
     const = const;
     node = node;
     func = func;
-    typeinfo = make_type program
+    typeinfo = make_type program;
+    hostinfo = program.hostinfo;
   }

@@ -1,6 +1,8 @@
 type id = string
 type moduleid = string
 
+type host = Host of string | Localhost
+
 type id_and_type = id * Type.t
 
 type id_and_type_opt = id * Type.t option
@@ -64,6 +66,7 @@ type program = {
   out_node: id_and_type list;
   use: moduleid list;
   definition: definition list;
+  hostinfo: (host * id) list;
 }
 
 exception InvalidId of string
