@@ -41,7 +41,9 @@ let rec unify t1 t2 =
     | TUnit, TUnit
     | TBool, TBool
     | TChar, TChar
-    | TInt, TUnit
+    | TInt, TChar
+    | TChar, TInt
+    | TInt, TInt
     | TFloat, TFloat -> ()
     | TTuple(ts1), TTuple(ts2)
       -> iter2ty unify ts1 ts2

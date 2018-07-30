@@ -71,7 +71,7 @@ let erlang_of_expr env e =
     | EConst (CBool b) -> string_of_bool b
     | EConst (CInt i)  -> string_of_int i
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
-    | EConst (CChar c) -> "?" ^ Char.escaped c
+    | EConst (CChar c) -> string_of_int (int_of_char c)
     | EId id -> string_of_eid ~raw:false (try_find id env)
     | EAnnot (id, ALast) -> string_of_eid (EILast(try_find id env))
     | EApp (id, es) -> (* workaround *)
@@ -81,7 +81,7 @@ let erlang_of_expr env e =
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
         | BMul -> " * "   | BDiv -> " / "        | BMod -> " rem "
         | BAdd -> " + "   | BSub -> " - "        | BShL -> " bsl "
-        | BShR -> " bsr " | BLt -> " < "         | BLte -> " <= "
+        | BShR -> " bsr " | BLt -> " < "         | BLte -> " =< "
         | BGt -> " > "    | BGte -> " >= "       | BEq -> " == "
         | BNe -> " /= "   | BAnd -> " band "     | BXor -> " bxor "
         | BOr -> " bor "  | BLAnd -> " andalso " | BLOr -> " orelse " | _ -> "") ^ f env e2 ^ ")"
