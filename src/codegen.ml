@@ -203,10 +203,10 @@ let def_node deps hi env (id, init, expr) =
         indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
-  id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
-  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
-  indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+  id ^ "(Buffer0, Rest0, Deferred0) ->\n" ^ 
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Buffer0, Rest0, Deferred0]),\n" else "") ^
+  indent 1 "HL = lists:sort(?SORTBuffer, maps:to_list(Buffer0)),\n" ^
+  indent 1 "{NBuffer, NRest, NDeferred} = lists:foldl(fun (E, {Buffer, Rest, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
@@ -217,22 +217,22 @@ let def_node deps hi env (id, init, expr) =
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
+      indent 4 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n"
     | others ->
-      indent 4 "case Last of\n" ^
+      indent 4 "case Rest of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
+      indent 6 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Buffer), maps:merge(Rest, Map), [Version|Deferred]}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
+  indent 3 "_ -> {Buffer, Rest, Deferred}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "end, {Buffer0, Rest0, Deferred0}, HL),\n" ^
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
-  indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred).\n"
+  indent 1 id ^ "(buffer_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+            "], Received, NBuffer), NRest, NDeferred).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -259,17 +259,17 @@ let init_values x ti =
 
 let lib_funcs = String.concat "\n" [
   (* sort function *)
-  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
+  "-define(SORTBuffer, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
   indent 1 "V1 == V2 -> K1 < K2;";
   indent 1 "true -> V1 < V2";
   "end end).";
-  (* update heap *)
-  "heap_update(Current, Last, {Id, RValue, {RVId, RVersion}}, Heap) ->";
+  (* update buffer *)
+  "buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer) ->";
   indent 1 "H1 = case lists:member(Id, Current) of";
-  indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Heap);";
-  indent 2 "false -> Heap";
+  indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Buffer);";
+  indent 2 "false -> Buffer";
   indent 1 "end,";
-	indent 1 "case lists:member(Id, Last) of";
+	indent 1 "case lists:member(Id, Rest) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
   indent 1 "end.";
