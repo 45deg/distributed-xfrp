@@ -47,7 +47,9 @@ let send hi i e =
   let target = match i with
     | "out_node" -> "out_node"
     | id -> let (host, _) = List.find (fun (_, ids) -> List.mem id ids) hi in
-            "{" ^ id ^ ",'" ^ string_of_host host ^ "'}" in
+            match host with 
+              | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
+              | Localhost -> id in
   let expr = match !config.mess with
     | None   -> target ^ " ! " ^ e
     | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
