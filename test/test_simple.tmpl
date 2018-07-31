@@ -1,9 +1,7 @@
-out() ->
-    receive M -> io:format("~p ~n",[M]) end,
-    out().
+out(_,M) -> io:format("~p ~n",[M]) end.
 
-in() ->
+in(localhost) ->
     num ! 1,
     timer:sleep(1000),
     io:format("~n", []),
-    in().
+    in(localhost).

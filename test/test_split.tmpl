@@ -1,12 +1,8 @@
-out() ->
-    receive
-        {ab, {A, B}, Version} -> 
-            io:format("(~p, ~p) @ ~p ~n", [A, B, Version])
-    end,
-    out().
+out(ab, {A,B}) ->
+    io:format("(~p, ~p) @ ~p ~n", [A, B]).
 
-in() ->
+in(localhost) ->
     num ! rand:uniform(10),
     timer:sleep(1000),
     io:format("~n", []),
-    in().
+    in(localhost).

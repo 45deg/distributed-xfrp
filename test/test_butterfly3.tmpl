@@ -1,11 +1,7 @@
-out() ->
-    receive
-        {Source, {A, B, C}, Version} -> 
-            io:format("~p: (~p, ~p, ~p) @ ~p~n", [Source, A, B, C, Version])
-    end,
-    out().
+out(Source, {A, B, C}) ->
+    io:format("~p: (~p, ~p, ~p)~n", [Source, A, B, C]).
 
-in() ->
+in(localhost) ->
     {A, B, C} = {rand:uniform(9), rand:uniform(9), rand:uniform(9)},
     io:format("Emit (~p, ~p, ~p)~n", [A, B, C]),
     in1 ! A,
@@ -13,4 +9,4 @@ in() ->
     in3 ! C,
     timer:sleep(1000),
     io:format("~n", []),
-    in().
+    in(localhost).
