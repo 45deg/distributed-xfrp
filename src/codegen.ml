@@ -50,8 +50,7 @@ let send hi i e =
             "{" ^ id ^ ",'" ^ string_of_host host ^ "'}" in
   let expr = match !config.mess with
     | None   -> target ^ " ! " ^ e
-    (* TODO now *)
-    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ i ^ ", " ^ e ^ ")" in
+    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
   match !config.drop with
     | None -> expr
     | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") of true -> "
