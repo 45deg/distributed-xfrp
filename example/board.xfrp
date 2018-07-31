@@ -1,0 +1,41 @@
+module Board
+in
+  {client1@localhost} key1 : Char,
+  {client2@localhost} key2 : Char
+out 
+  board : ([(Int, Int)], [((Int, Int), (Int, Char))])
+use Std
+
+fun assoc_update(key, value, list) =
+  case list of
+    [] -> [(key, value)];
+    (k, v) :: ls ->
+      if k == key then (key,value) :: ls
+                  else (k, v) :: assoc_update(key, value, ls);
+
+fun movebykey(pos, key) =
+  case pos of (x, y) ->
+  case key of 
+    258 -> (x + 1, y);
+    259 -> (if x == 0 then x else x - 1, y);
+    260 -> (x, if y == 0 then y else y - 1);
+    261 -> (x, y + 1);
+    _     -> (x,y);;
+
+fun update_buffer(player, pos, key, buffer) =
+  if (' ' <= key && key <= '~')
+  then assoc_update(pos, (player, key), buffer)
+  else buffer
+
+{client1@localhost}
+node init[(0,0)] pos1 = movebykey(pos1@last, key1)
+
+{client2@localhost}
+node init[(0,0)] pos2 = movebykey(pos2@last, key2)
+
+{server@localhost}
+node init[[]] buffer = 
+  let b1 = update_buffer(1, pos1, key1, buffer@last) in
+  let b2 = update_buffer(2, pos2, key2, b1) in
+  b2
+node board = ([pos1, pos2], buffer)
