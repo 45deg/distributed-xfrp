@@ -1,7 +1,8 @@
 module Board
 in
   {client1@localhost} key1 : Char,
-  {client2@localhost} key2 : Char
+  {client2@localhost} key2 : Char,
+  unify(key1, key2)
 out 
   board : ([(Int, Int)], [((Int, Int), (Int, Char))])
 use Std
