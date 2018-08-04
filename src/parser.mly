@@ -5,6 +5,17 @@ open Type
 module S = Set.Make(String);;
 module HM = Map.Make(struct type t = host let compare = compare end);;
 
+type innodes = 
+  | InNode of id_and_type
+  | InUnify of id list
+
+let in_split ls =
+  let f (xs, ys) = function
+  | InNode(idt) -> (idt :: xs, ys)
+  | InUnify(ids) -> (xs, ids :: ys) in 
+  let (ls, rs) = List.fold_left f ([],[]) ls in
+  (List.rev ls, List.rev rs)
+
 let reserved_word = S.of_list [
   "in";
   "out"
@@ -23,7 +34,7 @@ let update id host =
 
 %token
   MODULE IN OUT USE CONST NODE INIT FUN IF THEN ELSE
-  LET CASE OF LAST TRUE FALSE
+  LET CASE OF LAST TRUE FALSE UNIFY
 
 %token
   COMMA LBRACKET RBRACKET LPAREN RPAREN COLON COLON2
@@ -64,9 +75,12 @@ prog_module:
     USE modules = separated_list(COMMA, ID)
     defs = nonempty_list(definition)
     EOF
-    { {
+    { 
+    let (inode, iunis) = in_split innodes in   
+    {
       id = id;
-      in_node = innodes;
+      in_node = inode;
+      in_unify = iunis;
       out_node = outnodes;
       use = modules;
       definition = defs;
@@ -75,9 +89,11 @@ prog_module:
 
 in_nodes:
   | HOST id_and_type 
-    { update (fst $2) (Host $1); $2 }
+    { update (fst $2) (Host $1); InNode($2) }
   | id_and_type 
-    { update (fst $1) !last_host; $1 }
+    { update (fst $1) !last_host; InNode($1) }
+  | UNIFY LPAREN ids = separated_nonempty_list(COMMA, ID) RPAREN
+    { InUnify(ids) } 
 
 definition:
   | CONST it = id_and_type_opt EQUAL e = expr

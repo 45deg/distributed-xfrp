@@ -25,6 +25,7 @@ let () =
     "last", LAST;
     "True", TRUE;
     "False", FALSE;
+    "unify", UNIFY; 
   ]
 
 let next_line lexbuf =
