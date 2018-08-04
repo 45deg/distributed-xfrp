@@ -43,13 +43,15 @@ let string_of_eid ?(raw=true) = function
   | EILast(EILast _) ->
     (raise (AtLastError("@last operator cannot be applied twice, make another delay node")))
 
-let send hi i e = 
-  let target = match i with
+let get_target hi i = match i with
     | "out_node" -> "out_node"
     | id -> let (host, _) = List.find (fun (_, ids) -> List.mem id ids) hi in
-            match host with 
-              | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
-              | Localhost -> id in
+        match host with 
+          | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
+          | Localhost -> id
+
+let send hi i e = 
+  let target = get_target hi i in
   let expr = match !config.mess with
     | None   -> target ^ " ! " ^ e
     | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
@@ -133,11 +135,15 @@ let main deps xmod inits env =
   let init_map node = "#{" ^ 
     concat_map ", " (fun i -> "{last, " ^ i ^ "} => " ^ init i) node.input_last
   ^ "}" in
-  let spawn id node =
+  let spawn id =
     if List.exists (fun i -> compare i id == 0) xmod.source then
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
+    else if Dependency.M.exists (fun _ v -> compare v id == 0) xmod.unified_group then
+      indent 1 "register(" ^ id ^ ", " ^
+      "spawn(?MODULE, " ^ id ^ ", [0, #{}])),\n"
     else
+      let node = Dependency.M.find id deps in
       let (init, fun_id) = (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
@@ -147,14 +153,18 @@ let main deps xmod inits env =
   List.map (fun (host, ids) ->
     let hostname = string_of_host host in
     let whosts = (* The hosts to be waited *)
+      List.filter (fun (h, _) -> compare h host != 0) xmod.hostinfo |>
+      List.map (fun (h,_) -> string_of_host h)
+      (* this implementation is optimized but it works incorrectly
       let sinks = List.map (fun id -> (Dependency.M.find id deps).output) ids |>
       List.flatten |> List.sort_uniq compare in
       List.filter (fun (h, _) -> compare h host != 0) xmod.hostinfo |>
       List.filter (fun (_,is) -> List.exists (fun i -> List.mem i sinks) is) |>
       List.map (fun (h,_) -> string_of_host h)
+      *)
     in
     "start('" ^ hostname ^ "') -> \n" ^
-    concat_map "" (fun id -> spawn id (Dependency.M.find id deps)) ids ^
+    concat_map "" (fun id -> spawn id) ids ^
     (if List.exists (fun i -> List.mem i xmod.sink) ids then (* contains output node *)
       indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'])),\n" else "") ^
     indent 1 "wait([" ^ (concat_map "," (fun s -> "'" ^ s ^ "'") whosts) ^ "]),\n" ^
@@ -162,15 +172,36 @@ let main deps xmod inits env =
   ) xmod.hostinfo @ ["start(_) -> erlang:error(badarg)."]
   |> String.concat "\n"
 
-let in_node deps hi id = 
+let in_node deps hi id unify_node = 
+  let outputs = (try_find id deps).output in
   id ^ "(Version) ->\n" ^ 
   concat_map "\n" (indent 1) [
   "receive";
   "Value ->";
-    (try_find id deps).output |>
-    concat_map ",\n\t" (fun s -> indent 1 (send hi s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}")));
+  (match unify_node with
+    | Some(node) ->
+      send hi node ("{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}")
+    | None ->
+      concat_map ",\n\t" (fun s -> indent 1 (send hi s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}"))) outputs);
   "end,";
   id ^ "(Version + 1)."]
+
+let unify_node ug id =
+  let num = Dependency.M.cardinal @@ Dependency.M.filter (fun _ v -> compare v id == 0) ug in
+  id ^ "(Version, Last) ->\n" ^ 
+  concat_map "\n" (indent 1) [
+    "Elements = receive";
+    indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}}";
+    "end,";
+    "case maps:size(Elements) of";
+    indent 1 (string_of_int num) ^ " -> ";
+    indent 2 "maps:map(fun (Source, {Targets, Value}) -> ";
+    indent 3 "lists:foreach(fun (Target) -> Target ! {Source, Value, {" ^ id ^ ", Version}} end, Targets)";
+    indent 2 "end, Elements),";
+    indent 2 id ^ "(Version + 1, Elements);";
+    indent 1 "_ -> unified@0(Version, Elements)";
+    "end."
+  ]
 
 let out_node host outputs = String.concat "\n" @@
   let host = string_of_host host in
@@ -308,12 +339,14 @@ let of_xmodule x ti template opt =
      List.map (fun (i,_) -> (i, EIConst i)) x.const @
      List.map (function | (i, EFun(args, _)) -> (i, EIFun (i, List.length args))
                | _ -> assert false) x.func in
+  let unify_nodes = List.sort_uniq compare (List.map snd (Dependency.M.bindings x.unified_group)) in
   let attributes = 
     [[("start", 1)]; [("out", 2); ("out_node", 1); ("in", 1); ("wait", 1)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
+     List.map (fun i -> (i, 2)) unify_nodes;
      List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
@@ -336,7 +369,8 @@ let of_xmodule x ti template opt =
        | Some s -> [s]
        | None   -> [in_func x.source x.hostinfo; out_func x.sink])
     (* outfunc *)
-    @ (List.map (in_node dep x.hostinfo) x.source)
+    @ (List.map (fun i -> in_node dep x.hostinfo i (Dependency.M.find_opt i x.unified_group)) x.source)
+    @ List.map (unify_node x.unified_group) unify_nodes
     @ out_nodes x.hostinfo x.sink
     :: List.map (def_node dep x.hostinfo env_with_nodes) x.node
   )
