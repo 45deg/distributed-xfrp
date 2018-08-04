@@ -63,6 +63,7 @@ type definition
 type program = {
   id: moduleid;
   in_node: id_and_type list;
+  in_unify: (id list) list;
   out_node: id_and_type list;
   use: moduleid list;
   definition: definition list;
