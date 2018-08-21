@@ -1,5 +1,6 @@
-# xfrp-ocaml
-Xfrp for OCaml
+# Distributed XFRP
+
+A Distributed Functional Reactive Programming Language without Glitches
 
 ## Installation
 
@@ -9,7 +10,27 @@ opam install menhir
 make
 ```
 
-## Test
+## Example (Real-time Collaborative Editor)
+
+### Installation
+
+Prerequisites: Erlang runtime, tmux
+
+```
+cd example
+./setup_board.sh
+```
+
+### Run
+
+```
+cd example
+./start_board.sh
+```
+
+See also: https://tmuxcheatsheet.com/
+
+## Additional Examples
 
 ```
 ./main.native test/test1.xfrp
@@ -18,7 +39,7 @@ make
 ```
 ./main.native test/test_butterfly.xfrp -t test/test_butterfly.tmpl -o erlang/butterfly.erl
 cd erlang
-./start.sh -nodebug butterfly
+./start.sh butterfly
 ```
 
 ```
