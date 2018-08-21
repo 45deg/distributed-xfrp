@@ -1,5 +1,9 @@
-git clone https://github.com/mazenharake/cecho
-cd checho
+#!/bin/bash
+
+rm -rf cecho
+git clone https://github.com/45deg/cecho.git
+cd cecho
+git checkout 45deg-patch
 ./rebar3 clean
 ./rebar3 compile
 cd ..
