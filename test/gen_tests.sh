@@ -1,10 +1,10 @@
 #!/bin/bash
 
-program="./main.native"
+program="../main.native"
 
-for fname in test/*.xfrp; do
+for fname in *.xfrp; do
   fbname=${fname%.*}
   tmpl=$fbname.tmpl
-  erl=erlang/${fbname#test/}.erl
+  erl=../erlang/${fbname#test/}.erl
   $program $fname -o ${erl/test_/} -t $tmpl $@
 done

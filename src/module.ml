@@ -10,11 +10,13 @@ type tannot
 type t = {
   id: moduleid;
   source: id list;
+  unified_group: id M.t;
   sink: id list;
   const: (id * expr) list;
   func: (id * expr) list;
   node: (id * expr option * expr) list;
-  typeinfo: tannot M.t
+  typeinfo: tannot M.t;
+  hostinfo: (host * id list) list;
 }
 
 let collect defs = 
@@ -35,14 +37,33 @@ let make_type program =
   let out_t = List.fold_left (fun m (i,t) -> M.add i (TANode (Some t)) m) def_t program.out_node in
   out_t
 
-let of_program program = 
+let unify_source unifies source host =
+  let r = ref M.empty in
+  let rhost = ref host in
+  List.iteri (fun i xs ->
+    let nodename = ("unified@" ^ string_of_int i) in
+    (* wip-impl. *)
+    rhost := List.map (fun (h, ns) ->
+      if List.mem (List.hd xs) ns then (h,nodename::ns) else (h, ns)
+    ) !rhost;
+    List.iter (fun x ->
+      r := M.add x nodename !r
+    ) xs
+  ) unifies;
+  (!r, !rhost)
+
+let of_program program =
   let (const, func, node) = collect program.definition in
+  let source = List.map fst program.in_node in
+  let (ug, uh) = unify_source program.in_unify source program.hostinfo in
   {
     id = program.id;
-    source = List.map fst program.in_node;
+    source = source;
+    unified_group = ug;
     sink = List.map fst program.out_node;
     const = const;
     node = node;
     func = func;
-    typeinfo = make_type program
+    typeinfo = make_type program;
+    hostinfo = uh
   }

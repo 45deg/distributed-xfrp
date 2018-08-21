@@ -1,14 +1,8 @@
-out() ->
-    receive
-        {fan, true, _} ->
-            io:fwrite("T\n");
-        {fan, false, _} ->
-            io:fwrite("F\n")
-    end,
-    out().
+out(fan, true) -> io:fwrite("T\n");
+out(fan, true) -> io:fwrite("F\n").
 
-in() ->
+in(localhost) ->
     tmp ! rand:uniform() * 5 + 20,
     hmd ! rand:uniform() * 50 + 50,
     timer:sleep(1000),
-    in().
+    in(localhost).

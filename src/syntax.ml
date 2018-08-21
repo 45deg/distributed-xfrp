@@ -1,6 +1,8 @@
 type id = string
 type moduleid = string
 
+type host = Host of string | Localhost
+
 type id_and_type = id * Type.t
 
 type id_and_type_opt = id * Type.t option
@@ -61,9 +63,11 @@ type definition
 type program = {
   id: moduleid;
   in_node: id_and_type list;
+  in_unify: (id list) list;
   out_node: id_and_type list;
   use: moduleid list;
   definition: definition list;
+  hostinfo: (host * id list) list;
 }
 
 exception InvalidId of string
@@ -115,6 +119,10 @@ let rec string_of_expr = function
   | ECase(m, cls) -> 
     let f (p, e) = string_of_pat p ^ " -> "^ string_of_expr e ^ "; " in
     "case " ^ string_of_expr m ^ " of " ^ String.concat "" (List.map f cls)
+
+let string_of_host = function
+  | Host(h) -> h
+  | Localhost -> "localhost"
 
 let string_of_definition defs = 
   let open Type in

@@ -43,10 +43,18 @@ let string_of_eid ?(raw=true) = function
   | EILast(EILast _) ->
     (raise (AtLastError("@last operator cannot be applied twice, make another delay node")))
 
-let send i e = 
+let get_target hi i = match i with
+    | "out_node" -> "out_node"
+    | id -> let (host, _) = List.find (fun (_, ids) -> List.mem id ids) hi in
+        match host with 
+          | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
+          | Localhost -> id
+
+let send hi i e = 
+  let target = get_target hi i in
   let expr = match !config.mess with
-    | None   -> i ^ " ! " ^ e
-    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ i ^ ", " ^ e ^ ")" in
+    | None   -> target ^ " ! " ^ e
+    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
   match !config.drop with
     | None -> expr
     | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") of true -> "
@@ -66,7 +74,7 @@ let erlang_of_expr env e =
     | EConst (CBool b) -> string_of_bool b
     | EConst (CInt i)  -> string_of_int i
     | EConst (CFloat f)  -> Printf.sprintf "%f" f
-    | EConst (CChar c) -> "?" ^ Char.escaped c
+    | EConst (CChar c) -> string_of_int (int_of_char c)
     | EId id -> string_of_eid ~raw:false (try_find id env)
     | EAnnot (id, ALast) -> string_of_eid (EILast(try_find id env))
     | EApp (id, es) -> (* workaround *)
@@ -76,7 +84,7 @@ let erlang_of_expr env e =
     | EBin (op, e1, e2) -> "(" ^ f env e1 ^ (match op with
         | BMul -> " * "   | BDiv -> " / "        | BMod -> " rem "
         | BAdd -> " + "   | BSub -> " - "        | BShL -> " bsl "
-        | BShR -> " bsr " | BLt -> " < "         | BLte -> " <= "
+        | BShR -> " bsr " | BLt -> " < "         | BLte -> " =< "
         | BGt -> " > "    | BGte -> " >= "       | BEq -> " == "
         | BNe -> " /= "   | BAnd -> " band "     | BXor -> " bxor "
         | BOr -> " bor "  | BLAnd -> " andalso " | BLOr -> " orelse " | _ -> "") ^ f env e2 ^ ")"
@@ -127,54 +135,110 @@ let main deps xmod inits env =
   let init_map node = "#{" ^ 
     concat_map ", " (fun i -> "{last, " ^ i ^ "} => " ^ init i) node.input_last
   ^ "}" in
-  let spawn = concat_map "" (fun (id, node) ->
+  let spawn id =
     if List.exists (fun i -> compare i id == 0) xmod.source then
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ id ^ ", [0])),\n"
+    else if Dependency.M.exists (fun _ v -> compare v id == 0) xmod.unified_group then
+      indent 1 "register(" ^ id ^ ", " ^
+      "spawn(?MODULE, " ^ id ^ ", [0, #{}])),\n"
     else
+      let node = Dependency.M.find id deps in
       let (init, fun_id) = (init_map node, id) in
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
       ^ "}, #{}, []])),\n"
-  ) (M.bindings deps) in
-  "main() -> \n" ^
-  spawn ^
-  indent 1 "register(out, spawn(?MODULE, out, [])),\n" ^
-  indent 1 "in()."
+  in
+  List.map (fun (host, ids) ->
+    let hostname = string_of_host host in
+    let whosts = (* The hosts to be waited *)
+      List.filter (fun (h, _) -> compare h host != 0) xmod.hostinfo |>
+      List.map (fun (h,_) -> string_of_host h)
+      (* this implementation is optimized but it works incorrectly
+      let sinks = List.map (fun id -> (Dependency.M.find id deps).output) ids |>
+      List.flatten |> List.sort_uniq compare in
+      List.filter (fun (h, _) -> compare h host != 0) xmod.hostinfo |>
+      List.filter (fun (_,is) -> List.exists (fun i -> List.mem i sinks) is) |>
+      List.map (fun (h,_) -> string_of_host h)
+      *)
+    in
+    "start('" ^ hostname ^ "') -> \n" ^
+    concat_map "" (fun id -> spawn id) ids ^
+    (if List.exists (fun i -> List.mem i xmod.sink) ids then (* contains output node *)
+      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'])),\n" else "") ^
+    indent 1 "wait([" ^ (concat_map "," (fun s -> "'" ^ s ^ "'") whosts) ^ "]),\n" ^
+    indent 1 "in('" ^ hostname ^ "');"
+  ) xmod.hostinfo @ ["start(_) -> erlang:error(badarg)."]
+  |> String.concat "\n"
 
-let in_node deps id = 
+let in_node deps hi id unify_node = 
+  let outputs = (try_find id deps).output in
   id ^ "(Version) ->\n" ^ 
   concat_map "\n" (indent 1) [
   "receive";
   "Value ->";
-    (try_find id deps).output |>
-    concat_map ",\n\t" (fun s -> indent 1 (send s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}")));
+  (match unify_node with
+    | Some(node) ->
+      send hi node ("{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}")
+    | None ->
+      concat_map ",\n\t" (fun s -> indent 1 (send hi s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}"))) outputs);
   "end,";
   id ^ "(Version + 1)."]
 
-let def_node deps env (id, init, expr) =
+let unify_node ug id =
+  let num = Dependency.M.cardinal @@ Dependency.M.filter (fun _ v -> compare v id == 0) ug in
+  id ^ "(Version, Last) ->\n" ^ 
+  concat_map "\n" (indent 1) [
+    "Elements = receive";
+    indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}}";
+    "end,";
+    "case maps:size(Elements) of";
+    indent 1 (string_of_int num) ^ " -> ";
+    indent 2 "maps:map(fun (Source, {Targets, Value}) -> ";
+    indent 3 "lists:foreach(fun (Target) -> Target ! {Source, Value, {" ^ id ^ ", Version}} end, Targets)";
+    indent 2 "end, Elements),";
+    indent 2 id ^ "(Version + 1, Elements);";
+    indent 1 "_ -> unified@0(Version, Elements)";
+    "end."
+  ]
+
+let out_node host outputs = String.concat "\n" @@
+  let host = string_of_host host in
+  ("out_node('" ^ host ^ "') ->") :: [
+    indent 1 "receive";
+    (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs);
+    indent 1 "end,";
+    indent 1 "out_node('" ^ host ^ "');"
+  ]
+let out_nodes hosts outputs = String.concat "\n" @@
+  (List.map (fun (host, ids) -> (host, List.filter (fun s -> List.mem s outputs) ids)) hosts |>
+  List.filter (fun (_, ids) -> List.length ids > 0) |>
+  List.map (fun (host, ids) -> out_node host ids)) @
+  ["out_node(_) -> erlang:error(badarg)."]
+
+let def_node deps hi env (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
     List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
   let update n = 
-    match (if dep.is_output then "out" :: dep.output else dep.output) with
+    match (if dep.is_output then "out_node" :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
       | output ->
         indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
         indent n "lists:foreach(fun (V) -> \n" ^
         concat_map ",\n" (indent (n + 1)) (
-          List.map (fun i -> send i ("{" ^ id ^ ", Curr, V}")) output
+          List.map (fun i -> send hi i ("{" ^ id ^ ", Curr, V}")) output
         ) ^ "\n" ^
         indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
-  id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
-  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
-  indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
-  indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
+  id ^ "(Buffer0, Rest0, Deferred0) ->\n" ^ 
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Buffer0, Rest0, Deferred0]),\n" else "") ^
+  indent 1 "HL = lists:sort(?SORTBuffer, maps:to_list(Buffer0)),\n" ^
+  indent 1 "{NBuffer, NRest, NDeferred} = lists:foldl(fun (E, {Buffer, Rest, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
@@ -185,22 +249,22 @@ let def_node deps env (id, init, expr) =
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n"
+      indent 4 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n"
     | others ->
-      indent 4 "case Last of\n" ^
+      indent 4 "case Rest of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Heap), maps:merge(Last, Map), []};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Heap), maps:merge(Last, Map), [Version|Deferred]}\n" ^
+      indent 6 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Buffer), maps:merge(Rest, Map), [Version|Deferred]}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Heap, Last, Deferred}\n" ^
+  indent 3 "_ -> {Buffer, Rest, Deferred}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Heap0, Last0, Deferred0}, HL),\n" ^
+  indent 1 "end, {Buffer0, Rest0, Deferred0}, HL),\n" ^
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
-  indent 1 id ^ "(heap_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NHeap), NLast, NDeferred).\n"
+  indent 1 id ^ "(buffer_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+            "], Received, NBuffer), NRest, NDeferred).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -226,35 +290,44 @@ let init_values x ti =
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
 let lib_funcs = String.concat "\n" [
-  "-define(SORTHEAP, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
+  (* sort function *)
+  "-define(SORTBuffer, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
   indent 1 "V1 == V2 -> K1 < K2;";
   indent 1 "true -> V1 < V2";
   "end end).";
-  "heap_update(Current, Last, {Id, RValue, {RVId, RVersion}}, Heap) ->";
+  (* update buffer *)
+  "buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer) ->";
   indent 1 "H1 = case lists:member(Id, Current) of";
-  indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Heap);";
-  indent 2 "false -> Heap";
+  indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Buffer);";
+  indent 2 "false -> Buffer";
   indent 1 "end,";
-	indent 1 "case lists:member(Id, Last) of";
+	indent 1 "case lists:member(Id, Rest) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
+  indent 1 "end.";
+  (* wait *)
+  "wait(Hosts) -> ";
+  indent 1 "case lists:all(fun (N) -> net_kernel:connect_node(N) end, Hosts) of";
+  indent 2 "true -> ok;";
+  indent 2 "false -> timer:sleep(1000), wait(Hosts)";
   indent 1 "end."
 ]
 
-let in_func input = String.concat "\n" @@
-  "in() ->" :: List.map (indent 1) (
-    "%fill here" ::
-    List.map (fun i -> "% " ^ i ^ " ! sth") input @
-    ["in()."]
-  )
+let in_func input hosts = 
+  let fn (host, ids) =
+    let hostname = string_of_host host in
+    ("in('" ^ hostname ^ "') ->") :: List.map (indent 1) (
+      ("% fill here for " ^ hostname) ::
+      List.map (fun i -> "% " ^ i ^ " ! sth") (List.filter (fun i -> List.mem i ids) input) @
+      ["in('" ^ hostname ^ "');"]
+    ) |> String.concat "\n"
+  in
+  (List.map fn hosts) @ ["in(_) -> erlang:error(badarg)."] |> String.concat "\n"
+
 
 let out_func output = String.concat "\n" @@
-  "out() ->" :: List.map (indent 1) [
-    "receive";
-    (concat_map ";\n" (fun i -> indent 1 "{" ^ i ^ ", Value, Version} -> io:format(\"~p @ ~p~n\", [Value, Version])") output);
-    "end,";
-    "out()."
-  ]
+  List.map (fun id -> "out(" ^ id ^", Value) -> void; % replace here") output @
+  ["out(_, _) -> erlang:error(badarg)."]
 
 let of_xmodule x ti template opt = 
   config := opt;
@@ -266,12 +339,14 @@ let of_xmodule x ti template opt =
      List.map (fun (i,_) -> (i, EIConst i)) x.const @
      List.map (function | (i, EFun(args, _)) -> (i, EIFun (i, List.length args))
                | _ -> assert false) x.func in
+  let unify_nodes = List.sort_uniq compare (List.map snd (Dependency.M.bindings x.unified_group)) in
   let attributes = 
-    [[("main", 0)]; [("out", 0); ("in", 0)];
+    [[("start", 1)]; [("out", 2); ("out_node", 1); ("in", 1); ("wait", 1)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
+     List.map (fun i -> (i, 2)) unify_nodes;
      List.map (fun (i, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
@@ -292,8 +367,10 @@ let of_xmodule x ti template opt =
     @ main dep x inits env ::
      (match template with
        | Some s -> [s]
-       | None   -> [in_func x.source; out_func x.sink])
+       | None   -> [in_func x.source x.hostinfo; out_func x.sink])
     (* outfunc *)
-    @ (List.map (in_node dep) x.source)
-    @ List.map (def_node dep env_with_nodes) x.node
+    @ (List.map (fun i -> in_node dep x.hostinfo i (Dependency.M.find_opt i x.unified_group)) x.source)
+    @ List.map (unify_node x.unified_group) unify_nodes
+    @ out_nodes x.hostinfo x.sink
+    :: List.map (def_node dep x.hostinfo env_with_nodes) x.node
   )

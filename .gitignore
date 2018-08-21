@@ -10,4 +10,8 @@ _build
 *.plt
 erl_crash.dump
 
+example/out.*
+example/cecho
+example/board.erl
+
 erlang/*.erl

@@ -1,9 +1,8 @@
-out() ->
-    receive M -> io:format("~p ~n",[M]) end,
-    out().
+out(_,M) ->
+    io:format("~p ~n",[M]) end.
 
-in() ->
+in(localhost) ->
     a ! rand:uniform(10),
     timer:sleep(100),
     io:format("~n", []),
-    in().
+    in(localhost).

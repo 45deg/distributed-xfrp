@@ -1,12 +1,8 @@
-out() ->
-    receive
-        {count, N, Version} -> 
-            io:format("~p @ ~p ~n", [N, Version])
-    end,
-    out().
+out(count, N) ->
+    io:format("~p~n", [N]).
 
-in() ->
+in(localhost) ->
     input ! 1,
     timer:sleep(1000),
     io:format("~n", []),
-    in().
+    in(localhost).

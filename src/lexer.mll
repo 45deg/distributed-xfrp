@@ -25,6 +25,7 @@ let () =
     "last", LAST;
     "True", TRUE;
     "False", FALSE;
+    "unify", UNIFY; 
   ]
 
 let next_line lexbuf =
@@ -89,6 +90,8 @@ rule read = parse
     { CHAR(c) }
   | '\'' '\\' (['b' 'f' 'n' 'r' 't'] as c) '\''
     { CHAR (unescape c) }
+  | '{' ([^ '{' '}']+ as h) '}'
+    { HOST h }
   | id+
       { let s = Lexing.lexeme lexbuf in
           try

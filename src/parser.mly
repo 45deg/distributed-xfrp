@@ -3,17 +3,38 @@ open Syntax
 open Type
 
 module S = Set.Make(String);;
+module HM = Map.Make(struct type t = host let compare = compare end);;
+
+type innodes = 
+  | InNode of id_and_type
+  | InUnify of id list
+
+let in_split ls =
+  let f (xs, ys) = function
+  | InNode(idt) -> (idt :: xs, ys)
+  | InUnify(ids) -> (xs, ids :: ys) in 
+  let (ls, rs) = List.fold_left f ([],[]) ls in
+  (List.rev ls, List.rev rs)
 
 let reserved_word = S.of_list [
   "in";
   "out"
 ]
 
+let hostinfo = ref HM.empty
+let last_host = ref Localhost
+
+let update id host = 
+  last_host := host;
+  hostinfo := HM.update host (function 
+  | Some(l) -> Some(id :: l)
+  | None    -> Some([id])) !hostinfo
+
 %}
 
 %token
   MODULE IN OUT USE CONST NODE INIT FUN IF THEN ELSE
-  LET CASE OF LAST TRUE FALSE
+  LET CASE OF LAST TRUE FALSE UNIFY
 
 %token
   COMMA LBRACKET RBRACKET LPAREN RPAREN COLON COLON2
@@ -23,6 +44,7 @@ let reserved_word = S.of_list [
 
 %token <char> CHAR
 %token <string> ID
+%token <string> HOST
 %token <float> FLOAT
 %token <int> INT 
 %token EOF
@@ -48,24 +70,38 @@ let reserved_word = S.of_list [
 
 prog_module:
   | MODULE id = ID
-    IN innodes = separated_list(COMMA, id_and_type)
+    IN innodes = separated_list(COMMA, in_nodes)
     OUT outnodes = separated_list(COMMA, id_and_type)
     USE modules = separated_list(COMMA, ID)
     defs = nonempty_list(definition)
     EOF
-    { {
+    { 
+    let (inode, iunis) = in_split innodes in   
+    {
       id = id;
-      in_node = innodes;
+      in_node = inode;
+      in_unify = iunis;
       out_node = outnodes;
       use = modules;
-      definition = defs
+      definition = defs;
+      hostinfo = HM.bindings !hostinfo;
     } }
+
+in_nodes:
+  | HOST id_and_type 
+    { update (fst $2) (Host $1); InNode($2) }
+  | id_and_type 
+    { update (fst $1) !last_host; InNode($1) }
+  | UNIFY LPAREN ids = separated_nonempty_list(COMMA, ID) RPAREN
+    { InUnify(ids) } 
 
 definition:
   | CONST it = id_and_type_opt EQUAL e = expr
     { Const(it, e) }
+  | host = HOST NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
+    { update (fst it) (Host host); Node(it, init, e) }
   | NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { Node(it, init, e) }
+    { update (fst it) !last_host; Node(it, init, e) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
     { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
 

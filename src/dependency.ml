@@ -78,6 +78,9 @@ let get_graph xmodule =
       | Last i :: xs -> f (cs, i :: ls) xs
     in f ([], [])
   in
+  let unified name = 
+      try Module.M.find name xmodule.unified_group with | Not_found -> name
+  in
   let nodes = List.fold_left (fun m (i, _, e) -> M.add i e m) M.empty xmodule.node in
   let in_ids = S.of_list (List.map fst (M.bindings nodes) @ xmodule.source) in
   let ins = M.map (extract in_ids) nodes in
@@ -97,8 +100,8 @@ let get_graph xmodule =
     in
     S.fold (fun node -> 
       M.update node (function
-        | Some(s) -> Some(S.add in_name s)
-        | None    -> Some(S.singleton in_name)
+        | Some(s) -> Some(S.add (unified in_name) s)
+        | None    -> Some(S.singleton (unified in_name))
       )
     ) (ancestors in_name) m
   ) M.empty xmodule.source
@@ -107,7 +110,7 @@ let get_graph xmodule =
   M.mapi (fun k i -> partition (ES.elements i)) |>
   M.mapi (fun k (cur, last) ->
     let common_root r ids = List.filter (fun id -> 
-      try S.mem r (M.find id root) with Not_found -> compare r id == 0
+      try S.mem r (M.find id root) with Not_found -> compare r (unified id) == 0
     ) ids in
     let roots = try S.elements (M.find k root) with Not_found -> [] in
     { 

@@ -1,12 +1,8 @@
-out() ->
-    receive
-        {fib, N, Version} -> 
-            io:format("~p @ ~p ~n", [N, Version])
-    end,
-    out().
+out(fib, N) ->
+    io:format("~p~n", [N]).
 
-in() ->
+in(localhost) ->
     pulse ! void,
     timer:sleep(1000),
     io:format("~n", []),
-    in().
+    in(localhost).
