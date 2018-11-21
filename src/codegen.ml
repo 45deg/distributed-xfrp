@@ -13,9 +13,10 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
+  regress: int option
 }
 
-let config = ref { debug = false; mess = None; drop = None }
+let config = ref { debug = false; mess = None; drop = None; regress = None }
 
 let try_find id m = begin
   try M.find id m with 
@@ -217,7 +218,7 @@ let out_nodes hosts outputs = String.concat "\n" @@
   List.map (fun (host, ids) -> out_node host ids)) @
   ["out_node(_) -> erlang:error(badarg)."]
 
-let def_node deps hi env (id, init, expr) =
+let def_node deps hi env inits (id, init, expr) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
     List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
@@ -234,6 +235,16 @@ let def_node deps hi env (id, init, expr) =
         ) ^ "\n" ^
         indent n "end, [Version|Deferred]),\n"
   in
+  let default (cs,ls) = (* Default value for regression *)
+    let init i = try_find i inits |> erlang_of_expr env in
+    let defs = "#{" ^ String.concat ", " (
+      List.map (fun id -> id ^ " => " ^ init id) cs @
+      List.map (fun id -> "{last, " ^ id ^ "} => " ^ init id) ls)
+    ^ "}" in
+    (match !config.regress with
+    | Some(_) -> ", maps:merge(" ^ defs ^ ", NRest)"
+    | None    -> "")
+  in 
   (* main node function *)
   id ^ "(Buffer0, Rest0, Deferred0) ->\n" ^ 
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Buffer0, Rest0, Deferred0]),\n" else "") ^
@@ -264,7 +275,7 @@ let def_node deps hi env (id, init, expr) =
   indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(buffer_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NBuffer), NRest, NDeferred).\n"
+            "], Received, NBuffer" ^ default (dep.input_current, dep.input_last) ^ "), NRest, NDeferred).\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -289,22 +300,32 @@ let init_values x ti =
     | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
-let lib_funcs = String.concat "\n" [
+let lib_funcs () = String.concat "\n" [
   (* sort function *)
   "-define(SORTBuffer, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
   indent 1 "V1 == V2 -> K1 < K2;";
   indent 1 "true -> V1 < V2";
   "end end).";
   (* update buffer *)
-  "buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer) ->";
+  (match !config.regress with
+    | Some(_) -> "buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer, Default) ->"
+    | None    -> "buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer) ->");
   indent 1 "H1 = case lists:member(Id, Current) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion}, fun(M) -> M#{ Id => RValue } end, #{ Id => RValue }, Buffer);";
   indent 2 "false -> Buffer";
   indent 1 "end,";
-	indent 1 "case lists:member(Id, Rest) of";
+	indent 1 "H2 = case lists:member(Id, Rest) of";
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
-  indent 1 "end.";
+  indent 1 "end,";
+  (match !config.regress with
+    | Some(n) -> 
+      indent 1 "Latest = maps:fold(fun ({K,V},_,M) -> M#{ K => max(maps:get(K,M,0), V) } end, #{}, H2),\n" ^
+      indent 1 "maps:map(fun ({K,V},M) -> case maps:get(K, Latest) - V > " ^ string_of_int n ^ "of\n" ^
+      indent 2 "true  -> maps:merge(M,Default);\n" ^
+      indent 2 "false -> M\n" ^
+      indent 1 "end end, H2)."
+    | None -> indent 1 "H2.");
   (* wait *)
   "wait(Hosts) -> ";
   indent 1 "case lists:all(fun (N) -> net_kernel:connect_node(N) end, Hosts) of";
@@ -361,7 +382,7 @@ let of_xmodule x ti template opt =
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
-    lib_funcs ::
+    lib_funcs () ::
     List.map (def_const env) x.const
     @ List.map (def_fun env) x.func
     @ main dep x inits env ::
@@ -372,5 +393,5 @@ let of_xmodule x ti template opt =
     @ (List.map (fun i -> in_node dep x.hostinfo i (Dependency.M.find_opt i x.unified_group)) x.source)
     @ List.map (unify_node x.unified_group) unify_nodes
     @ out_nodes x.hostinfo x.sink
-    :: List.map (def_node dep x.hostinfo env_with_nodes) x.node
+    :: List.map (def_node dep x.hostinfo env_with_nodes inits) x.node
   )
