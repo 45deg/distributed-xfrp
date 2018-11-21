@@ -1,5 +1,5 @@
 
-out(_,M) -> io:format("~p ~n",[M]) end.
+out(_,M) -> io:format("~p ~n",[M]).
 
 gen_list(_,0) -> [];
 gen_list(M,N) -> [rand:uniform(M)|gen_list(M,N-1)].
