@@ -14,7 +14,8 @@ let debug_mode = ref false
 let opt = let open Codegen in ref {
   debug = false;
   mess = None;
-  drop = None
+  drop = None;
+  retry = None;
 }
 
 let mode = ref Erlang
@@ -25,7 +26,8 @@ let speclist = [
   ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
   ("-debug", Arg.Unit(fun _ -> opt := { !opt with debug = true }), "Output function trace (experimental)");
   ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
-  ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)")
+  ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)");
+  ("-retry", Arg.Int(fun n -> opt := { !opt with retry = Some(n) }), " [N] Enable Retry: the timeout is N ms (experimental)");
 ]
 
 let load_file f =

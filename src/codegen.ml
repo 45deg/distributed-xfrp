@@ -13,9 +13,10 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
+  retry: int option;
 }
 
-let config = ref { debug = false; mess = None; drop = None }
+let config = ref { debug = false; mess = None; drop = None; retry = None }
 
 let try_find id m = begin
   try M.find id m with 
@@ -50,8 +51,7 @@ let get_target hi i = match i with
           | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
           | Localhost -> id
 
-let send hi i e = 
-  let target = get_target hi i in
+let send_raw target e = 
   let expr = match !config.mess with
     | None   -> target ^ " ! " ^ e
     | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
@@ -64,6 +64,11 @@ let send hi i e =
                     else
                       "false")
                    ^ " end)"
+
+let send hi i e =
+  let target = get_target hi i in
+  send_raw target e
+
 
 let concat_map s f l = String.concat s (List.map f l)
 let indent n s = String.make n '\t' ^ s
@@ -181,8 +186,18 @@ let in_node deps hi id unify_node =
   (match unify_node with
     | Some(node) ->
       send hi node ("{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}")
-    | None ->
-      concat_map ",\n\t" (fun s -> indent 1 (send hi s ("{" ^ id ^ ", Value, {" ^ id ^ ", Version}}"))) outputs);
+    | None -> 
+      let r = ref 0 in
+      concat_map ",\n\t" (fun s -> indent 1 
+        begin let m = "{" ^ id ^ ", Value, {" ^ id ^ ", Version}}" in match !config.retry with 
+        | None -> send hi s m
+        | Some(n) ->
+          let rid = incr r; "R" ^ string_of_int !r in
+          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ s ^ ", {" ^ m ^ ", self()}) end), ") ^
+          (send hi s ("{" ^ m ^ ", " ^ rid ^ "}"))
+        end
+      ) outputs
+  );
   "end,";
   id ^ "(Version + 1)."]
 
@@ -207,7 +222,10 @@ let out_node host outputs = String.concat "\n" @@
   let host = string_of_host host in
   ("out_node('" ^ host ^ "') ->") :: [
     indent 1 "receive";
-    (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs);
+    begin match !config.retry with
+      | None -> (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs)
+      | Some(_) -> (concat_map ";\n" (fun i -> indent 2 "{{" ^ i ^ ", Value, _}, R} -> " ^ (send_raw "R" "ack") ^ ",out(" ^ i ^ ", Value)") outputs)
+    end;
     indent 1 "end,";
     indent 1 "out_node('" ^ host ^ "');"
   ]
@@ -223,6 +241,7 @@ let def_node deps hi env (id, init, expr) =
     List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
+  let ridcnt = ref 0 in
   let update n = 
     match (if dep.is_output then "out_node" :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
@@ -230,7 +249,12 @@ let def_node deps hi env (id, init, expr) =
         indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
         indent n "lists:foreach(fun (V) -> \n" ^
         concat_map ",\n" (indent (n + 1)) (
-          List.map (fun i -> send hi i ("{" ^ id ^ ", Curr, V}")) output
+          List.map (fun i -> let m = "{" ^ id ^ ", Curr, V}" in match !config.retry with
+            | None -> send hi i m
+            | Some(n) -> let rid = incr ridcnt; "R" ^ string_of_int !ridcnt in
+              rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ i ^ ", {" ^ m ^ ", self()}) end), " ^
+              send hi i ("{" ^ m ^ ", " ^ rid ^ "}")
+          ) output
         ) ^ "\n" ^
         indent n "end, [Version|Deferred]),\n"
   in
@@ -261,7 +285,10 @@ let def_node deps hi env (id, init, expr) =
   indent 3 "_ -> {Buffer, Rest, Deferred}\n" ^
   indent 2 "end\n" ^
   indent 1 "end, {Buffer0, Rest0, Deferred0}, HL),\n" ^
-  indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n" ^
+  begin match !config.retry with
+    | None -> indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n"
+    | Some(_) -> indent 1 "Received = receive {{_,_,{_, _}} = M, R} -> " ^ (send_raw "R" "ack") ^ ", M end,\n"
+  end ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(buffer_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
             "], Received, NBuffer), NRest, NDeferred).\n"
@@ -310,8 +337,10 @@ let lib_funcs = String.concat "\n" [
   indent 1 "case lists:all(fun (N) -> net_kernel:connect_node(N) end, Hosts) of";
   indent 2 "true -> ok;";
   indent 2 "false -> timer:sleep(1000), wait(Hosts)";
-  indent 1 "end."
-]
+  indent 1 "end.";
+  "resender(T, Target, Msg) ->";
+  indent 1 "receive ack -> ok";
+  indent 1 "after T -> " ^ send_raw "Target" "Msg" ^ ", resender(T, Target, Msg) end."]
 
 let in_func input hosts = 
   let fn (host, ids) =
