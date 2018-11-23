@@ -185,7 +185,14 @@ let in_node deps hi id unify_node =
   "Value ->";
   (match unify_node with
     | Some(node) ->
-      send hi node ("{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}")
+      let r = ref 0 in
+      begin let m = "{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}" in match !config.retry with 
+        | None -> send hi node m
+        | Some(n) ->
+          let rid = incr r; "R" ^ string_of_int !r in
+          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi node) ^ ", {" ^ m ^ ", self()}) end), ") ^
+          (send hi node ("{" ^ m ^ ", " ^ rid ^ "}"))
+      end
     | None -> 
       let r = ref 0 in
       concat_map ",\n\t" (fun s -> indent 1 
@@ -193,7 +200,7 @@ let in_node deps hi id unify_node =
         | None -> send hi s m
         | Some(n) ->
           let rid = incr r; "R" ^ string_of_int !r in
-          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ s ^ ", {" ^ m ^ ", self()}) end), ") ^
+          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi s) ^ ", {" ^ m ^ ", self()}) end), ") ^
           (send hi s ("{" ^ m ^ ", " ^ rid ^ "}"))
         end
       ) outputs
@@ -206,12 +213,22 @@ let unify_node ug id =
   id ^ "(Version, Last) ->\n" ^ 
   concat_map "\n" (indent 1) [
     "Elements = receive";
-    indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}}";
+      begin match !config.retry with 
+        | None -> indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}}"
+        | Some _ -> indent 1 "{{Source, Targets, Value}, R0} -> " ^ (send_raw "R0" "ack") ^ ", Last#{Source => {Targets, Value}}"
+      end;
     "end,";
     "case maps:size(Elements) of";
     indent 1 (string_of_int num) ^ " -> ";
     indent 2 "maps:map(fun (Source, {Targets, Value}) -> ";
-    indent 3 "lists:foreach(fun (Target) -> Target ! {Source, Value, {" ^ id ^ ", Version}} end, Targets)";
+    begin let m = "{Source, Value, {" ^ id ^ ", Version}}" in match !config.retry with 
+      | None ->
+        indent 3 "lists:foreach(fun (Target) -> " ^ (send_raw "Target" m) ^ " end, Targets)"
+      | Some n ->
+        indent 3 "lists:foreach(fun (Target) -> " ^
+        "R = spawn(fun () -> resender(" ^ string_of_int n ^ ", Target, {" ^ m ^ ", self()}) end), " ^
+        (send_raw "Target" ("{" ^ m ^", R}")) ^ " end, Targets)"
+    end;
     indent 2 "end, Elements),";
     indent 2 id ^ "(Version + 1, Elements);";
     indent 1 "_ -> unified@0(Version, Elements)";
@@ -252,7 +269,7 @@ let def_node deps hi env (id, init, expr) =
           List.map (fun i -> let m = "{" ^ id ^ ", Curr, V}" in match !config.retry with
             | None -> send hi i m
             | Some(n) -> let rid = incr ridcnt; "R" ^ string_of_int !ridcnt in
-              rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ i ^ ", {" ^ m ^ ", self()}) end), " ^
+              rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi i) ^ ", {" ^ m ^ ", self()}) end), " ^
               send hi i ("{" ^ m ^ ", " ^ rid ^ "}")
           ) output
         ) ^ "\n" ^
