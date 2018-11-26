@@ -231,7 +231,7 @@ let unify_node ug id =
     end;
     indent 2 "end, Elements),";
     indent 2 id ^ "(Version + 1, Elements);";
-    indent 1 "_ -> unified@0(Version, Elements)";
+    indent 1 "_ -> " ^ id ^ "(Version, Elements)";
     "end."
   ]
 
