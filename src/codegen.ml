@@ -69,6 +69,20 @@ let send hi i e =
   let target = get_target hi i in
   send_raw target e
 
+type latest_enum
+  = Prefix of string
+  | Postfix of string
+  | NoFix
+  | Update
+  | EmptyMap
+let latest attr = match !config.retry with
+  | None -> ""
+  | Some _ -> match attr with 
+    | Prefix s ->  ", " ^ s ^ "Latest"
+    | Postfix s ->  ", Latest" ^ s
+    | NoFix ->  ", Latest"
+    | Update -> ", update_lv(Version, Latest)"
+    | EmptyMap -> ", #{}"
 
 let concat_map s f l = String.concat s (List.map f l)
 let indent n s = String.make n '\t' ^ s
@@ -153,7 +167,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}, []])),\n"
+      ^ "}, #{}, []" ^ (latest EmptyMap) ^ "])),\n"
   in
   List.map (fun (host, ids) ->
     let hostname = string_of_host host in
@@ -171,7 +185,7 @@ let main deps xmod inits env =
     "start('" ^ hostname ^ "') -> \n" ^
     concat_map "" (fun id -> spawn id) ids ^
     (if List.exists (fun i -> List.mem i xmod.sink) ids then (* contains output node *)
-      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'])),\n" else "") ^
+      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'" ^ latest EmptyMap ^ "])),\n" else "") ^
     indent 1 "wait([" ^ (concat_map "," (fun s -> "'" ^ s ^ "'") whosts) ^ "]),\n" ^
     indent 1 "in('" ^ hostname ^ "');"
   ) xmod.hostinfo @ ["start(_) -> erlang:error(badarg)."]
@@ -237,20 +251,23 @@ let unify_node ug id =
 
 let out_node host outputs = String.concat "\n" @@
   let host = string_of_host host in
-  ("out_node('" ^ host ^ "') ->") :: [
-    indent 1 "receive";
+  ("out_node('" ^ host ^ "'" ^ (latest NoFix) ^ ") ->") :: [
+    indent 1 "NLatest = receive";
     begin match !config.retry with
       | None -> (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs)
-      | Some(_) -> (concat_map ";\n" (fun i -> indent 2 "{{" ^ i ^ ", Value, _}, R} -> " ^ (send_raw "R" "ack") ^ ",out(" ^ i ^ ", Value)") outputs)
+      | Some(_) -> (concat_map ";\n" 
+        (fun i -> indent 2 "{{" ^ i ^ ", Value, Version}, R} -> " ^ (send_raw "R" "ack") ^ ", is_new_lv(Version, Latest) andalso out(" ^ i ^ ", Value), update_lv(Version, Latest)")
+      outputs)
     end;
     indent 1 "end,";
-    indent 1 "out_node('" ^ host ^ "');"
+    indent 1 "out_node('" ^ host ^ "'" ^ (latest (Prefix "N")) ^ ");"
   ]
 let out_nodes hosts outputs = String.concat "\n" @@
   (List.map (fun (host, ids) -> (host, List.filter (fun s -> List.mem s outputs) ids)) hosts |>
   List.filter (fun (_, ids) -> List.length ids > 0) |>
   List.map (fun (host, ids) -> out_node host ids)) @
-  ["out_node(_) -> erlang:error(badarg)."]
+  ["out_node(_" ^ (latest NoFix) ^ ") -> erlang:error(badarg)."]
+
 
 let def_node deps hi env (id, init, expr) =
   let dep = try_find id deps in
@@ -276,10 +293,10 @@ let def_node deps hi env (id, init, expr) =
         indent n "end, [Version|Deferred]),\n"
   in
   (* main node function *)
-  id ^ "(Buffer0, Rest0, Deferred0) ->\n" ^ 
-  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Buffer0, Rest0, Deferred0]),\n" else "") ^
+  id ^ "(Buffer0, Rest0, Deferred0" ^ latest (Postfix "0") ^ ") ->\n" ^ 
+  (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [{Buffer0" ^ latest (Postfix "0") ^ "}, Rest0, Deferred0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTBuffer, maps:to_list(Buffer0)),\n" ^
-  indent 1 "{NBuffer, NRest, NDeferred} = lists:foldl(fun (E, {Buffer, Rest, Deferred}) -> \n" ^
+  indent 1 "{NBuffer, NRest, NDeferred" ^ latest (Prefix "N") ^ "} = lists:foldl(fun (E, {Buffer, Rest, Deferred" ^ latest NoFix ^ "}) -> \n" ^
   indent 2 "case E of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
@@ -290,25 +307,27 @@ let def_node deps hi env (id, init, expr) =
     match other_vars with
     | ([],[]) -> 
       update 4 ^
-      indent 4 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n"
+      indent 4 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []" ^ latest Update ^ "};\n"
     | others ->
       indent 4 "case Rest of\n" ^
       indent 5 (bind others) ^ " -> \n" ^
       update 6 ^
-      indent 6 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []};\n" ^
-      indent 5 "_ -> {maps:remove(Version, Buffer), maps:merge(Rest, Map), [Version|Deferred]}\n" ^
+      indent 6 "{maps:remove(Version, Buffer), maps:merge(Rest, Map), []" ^ latest Update ^ "};\n" ^
+      indent 5 "_ -> {maps:remove(Version, Buffer), maps:merge(Rest, Map), [Version|Deferred]" ^ latest Update ^ "}\n" ^
       indent 4 "end;\n"
   ) dep.root_group ^
-  indent 3 "_ -> {Buffer, Rest, Deferred}\n" ^
+  indent 3 "_ -> {Buffer, Rest, Deferred" ^ (latest NoFix) ^ "}\n" ^
   indent 2 "end\n" ^
-  indent 1 "end, {Buffer0, Rest0, Deferred0}, HL),\n" ^
+  indent 1 "end, {Buffer0, Rest0, Deferred0" ^ (latest (Postfix "0")) ^ "}, HL),\n" ^
   begin match !config.retry with
     | None -> indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n"
     | Some(_) -> indent 1 "Received = receive {{_,_,{_, _}} = M, R} -> " ^ (send_raw "R" "ack") ^ ", M end,\n"
   end ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
-  indent 1 id ^ "(buffer_update([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
-            "], Received, NBuffer), NRest, NDeferred).\n"
+  indent 1 id ^ "(buffer_update" ^
+    (match !config.retry with | None -> "" | Some _ -> "_l") ^
+    "([" ^ String.concat ", " dep.input_current ^"], [" ^ String.concat ", " dep.input_last ^
+    "], Received, NBuffer" ^ latest (Prefix "N") ^ "), NRest, NDeferred" ^ latest (Prefix "N") ^ ").\n"
 
 let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
@@ -349,6 +368,9 @@ let lib_funcs = String.concat "\n" [
   indent 2 "true  -> maps:update_with({RVId, RVersion + 1}, fun(M) -> M#{ {last, Id} => RValue } end, #{ {last, Id} => RValue }, H1);";
   indent 2 "false -> H1";
   indent 1 "end.";
+  "buffer_update_l(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer, Latest) ->";
+  indent 1 "Buf = buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer),";
+  indent 1 "maps:filter(fun({I,Version},_) -> Version >= element(1,maps:get(I,Latest,{0,0})) end, Buf).";
   (* wait *)
   "wait(Hosts) -> ";
   indent 1 "case lists:all(fun (N) -> net_kernel:connect_node(N) end, Hosts) of";
@@ -357,7 +379,20 @@ let lib_funcs = String.concat "\n" [
   indent 1 "end.";
   "resender(T, Target, Msg) ->";
   indent 1 "receive ack -> ok";
-  indent 1 "after T -> " ^ send_raw "Target" "Msg" ^ ", resender(T, Target, Msg) end."]
+  indent 1 "after T -> " ^ send_raw "Target" "Msg" ^ ", resender(T, Target, Msg) end.";
+  "update_lvpair(Version, ESet) ->";
+  indent 1 "case sets:is_element(Version + 1, ESet) of";
+  indent 2 "true  -> update_lvpair(Version + 1, sets:del_element(Version + 1, ESet));";
+  indent 2 "false -> {Version, ESet}";
+  indent 1 "end.";
+  "update_lv({Id, Version}, M) ->";
+  indent 1 "{Num, ESet} = maps:get(Id, M, {0, sets:new()}),";
+  indent 1 "maps:put(Id, case Version - 1 of";
+  indent 2 "Num -> update_lvpair(Version, ESet);";
+  indent 2 "_ -> {Num, sets:add_element(Version, ESet)}";
+  indent 1 "end, M).";
+  "is_new_lv({Id, Version}, M) -> maps:is_key(Id, M) andalso element(1,maps:get(Id, M)) < Version."
+  ]
 
 let in_func input hosts = 
   let fn (host, ids) =
@@ -387,13 +422,21 @@ let of_xmodule x ti template opt =
                | _ -> assert false) x.func in
   let unify_nodes = List.sort_uniq compare (List.map snd (Dependency.M.bindings x.unified_group)) in
   let attributes = 
-    [[("start", 1)]; [("out", 2); ("out_node", 1); ("in", 1); ("wait", 1)];
+    [[("start", 1)]; [("out", 2);
+      ("out_node", match !config.retry with 
+       | None   -> 1
+       | Some _ -> 2);
+      ("in", 1); ("wait", 1)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
      List.map (fun i -> (i, 2)) unify_nodes;
-     List.map (fun (i, _, _) -> (i, 3)) x.node]
+     List.map (fun (i, _, _) -> 
+       match !config.retry with 
+       | None   -> (i, 3)
+       | Some _ -> (i, 4)
+    ) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
