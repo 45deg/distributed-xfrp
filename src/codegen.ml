@@ -391,7 +391,7 @@ let lib_funcs = String.concat "\n" [
   indent 2 "Num -> update_lvpair(Version, ESet);";
   indent 2 "_ -> {Num, sets:add_element(Version, ESet)}";
   indent 1 "end, M).";
-  "is_new_lv({Id, Version}, M) -> maps:is_key(Id, M) andalso element(1,maps:get(Id, M)) < Version."
+  "is_new_lv({Id, Version}, M) -> (not maps:is_key(Id, M)) orelse element(1,maps:get(Id, M)) < Version."
   ]
 
 let in_func input hosts = 
