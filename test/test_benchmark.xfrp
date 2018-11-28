@@ -1,0 +1,8 @@
+module Simple
+in
+  num : Int
+out 
+  ext : Int
+use Std
+
+node ext = num

@@ -1,0 +1,14 @@
+out(ext, M) ->
+    io:format("G|~p|~p~n", [M,erlang:system_time()]),
+    case M of 
+        100000 -> timer:sleep(1), exit(ok);
+        _ -> nop
+    end.
+
+in_cont(100001) -> ok;
+in_cont(I) ->
+    num ! I,
+    io:format("S|~p|~p~n", [I,erlang:system_time()]),
+    in_cont(I+1).
+
+in(localhost) -> in_cont(0).
