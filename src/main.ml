@@ -16,6 +16,7 @@ let opt = let open Codegen in ref {
   mess = None;
   drop = None;
   retry = None;
+  benchmark = None
 }
 
 let mode = ref Erlang
@@ -28,6 +29,7 @@ let speclist = [
   ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
   ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)");
   ("-retry", Arg.Int(fun n -> opt := { !opt with retry = Some(n) }), " [N] Enable Retry: the timeout is N ms (experimental)");
+  ("-benchmark", Arg.String(fun s -> opt := { !opt with benchmark = Some(s) }), "[hostname] Benchmark for Actors and Messages")
 ]
 
 let load_file f =

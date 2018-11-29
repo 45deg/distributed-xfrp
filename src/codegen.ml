@@ -14,9 +14,10 @@ type code_option = {
   mess: int option;
   drop: float option;
   retry: int option;
+  benchmark: string option;
 }
 
-let config = ref { debug = false; mess = None; drop = None; retry = None }
+let config = ref { debug = false; mess = None; drop = None; retry = None; benchmark = None }
 
 let try_find id m = begin
   try M.find id m with 
@@ -51,10 +52,14 @@ let get_target hi i = match i with
           | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
           | Localhost -> id
 
+let benchcode message = match !config.benchmark with
+  | None   -> ""
+  | Some host -> "{benchmark, " ^ host ^ "} ! " ^ message ^ "," 
+
 let send_raw target e = 
-  let expr = match !config.mess with
+  let expr = (benchcode "message") ^ (match !config.mess with
     | None   -> target ^ " ! " ^ e
-    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")" in
+    | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")") in
   match !config.drop with
     | None -> expr
     | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") of true -> "
@@ -204,6 +209,7 @@ let in_node deps hi id unify_node =
         | None -> send hi node m
         | Some(n) ->
           let rid = incr r; "R" ^ string_of_int !r in
+          (benchcode "add_actor") ^
           (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi node) ^ ", {" ^ m ^ ", self()}) end), ") ^
           (send hi node ("{" ^ m ^ ", " ^ rid ^ "}"))
       end
@@ -214,6 +220,7 @@ let in_node deps hi id unify_node =
         | None -> send hi s m
         | Some(n) ->
           let rid = incr r; "R" ^ string_of_int !r in
+          (benchcode "add_actor") ^
           (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi s) ^ ", {" ^ m ^ ", self()}) end), ") ^
           (send hi s ("{" ^ m ^ ", " ^ rid ^ "}"))
         end
@@ -240,6 +247,7 @@ let unify_node ug id =
         indent 3 "lists:foreach(fun (Target) -> " ^ (send_raw "Target" m) ^ " end, Targets)"
       | Some n ->
         indent 3 "lists:foreach(fun (Target) -> " ^
+        (benchcode "add_actor") ^
         "R = spawn(fun () -> resender(" ^ string_of_int n ^ ", Target, {" ^ m ^ ", self()}) end), " ^
         (send_raw "Target" ("{" ^ m ^", R}")) ^ " end, Targets)"
     end;
@@ -286,6 +294,7 @@ let def_node deps hi env (id, init, expr) =
           List.map (fun i -> let m = "{" ^ id ^ ", Curr, V}" in match !config.retry with
             | None -> send hi i m
             | Some(n) -> let rid = incr ridcnt; "R" ^ string_of_int !ridcnt in
+              (benchcode "add_actor") ^
               rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi i) ^ ", {" ^ m ^ ", self()}) end), " ^
               send hi i ("{" ^ m ^ ", " ^ rid ^ "}")
           ) output
@@ -352,7 +361,7 @@ let init_values x ti =
     | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
-let lib_funcs = String.concat "\n" [
+let lib_funcs () = String.concat "\n" [
   (* sort function *)
   "-define(SORTBuffer, fun ({{K1, V1}, _}, {{K2, V2}, _}) -> if";
   indent 1 "V1 == V2 -> K1 < K2;";
@@ -378,7 +387,7 @@ let lib_funcs = String.concat "\n" [
   indent 2 "false -> timer:sleep(1000), wait(Hosts)";
   indent 1 "end.";
   "resender(T, Target, Msg) ->";
-  indent 1 "receive ack -> ok";
+  indent 1 "receive ack -> " ^ (benchcode "del_actor") ^ "ok";
   indent 1 "after T -> " ^ send_raw "Target" "Msg" ^ ", resender(T, Target, Msg) end.";
   "update_lvpair(Version, ESet) ->";
   indent 1 "case sets:is_element(Version + 1, ESet) of";
@@ -450,7 +459,7 @@ let of_xmodule x ti template opt =
     ("-module(" ^ String.lowercase_ascii x.id ^ ").") ::
     exports ::
     (* concat_map "\n" (fun s -> "%" ^ s) (String.split_on_char '\n' (string_of_graph dep)) :: *)
-    lib_funcs ::
+    lib_funcs () ::
     List.map (def_const env) x.const
     @ List.map (def_fun env) x.func
     @ main dep x inits env ::
