@@ -25,6 +25,7 @@ end
 type erl_id = 
   | EIConst of string 
   | EIFun of string * int
+  | EIExtern of string * int
   | EIVar of string
   | EISigVar of string
   | EILast of erl_id
@@ -33,12 +34,14 @@ let string_of_eid ?(raw=true) = function
   | EIConst(id) -> "(const_" ^ id ^ "())"
   | EIFun(id, n) -> (if raw then "fun_" ^ id
                             else "fun ?MODULE:fun_" ^ id ^ "/" ^ string_of_int n)
+  | EIExtern(id, n) -> (if raw then id
+                            else "fun ?MODULE:" ^ id ^ "/" ^ string_of_int n)
   | EIVar(id) -> (match id with
     | "_" -> "_"
     | s -> "V" ^ s)
   | EISigVar(id) -> "S" ^ id
   | EILast(EISigVar(id)) -> "LS" ^ id
-  | EILast(EIConst(id)) | EILast(EIFun(id, _)) | EILast(EIVar(id)) ->
+  | EILast(EIConst(id)) | EILast(EIFun(id, _)) | EILast(EIExtern(id, _)) | EILast(EIVar(id)) ->
     (raise (AtLastError(id ^ " is not node")))
   | EILast(EILast _) ->
     (raise (AtLastError("@last operator cannot be applied twice, make another delay node")))
@@ -272,8 +275,9 @@ let def_const env (id, e) =
   (string_of_eid (EIConst id)) ^ " -> " ^ erlang_of_expr env e ^ "."
 
 let def_fun env (id, body) = match body with
-  | EFun(a, _) ->
-    (string_of_eid (EIFun (id, -1))) ^ erlang_of_expr env body ^ "."
+  | InternFun (EFun(a, _) as expr) ->
+    (string_of_eid (EIFun (id, -1))) ^ erlang_of_expr env expr ^ "."
+  | ExternFun _ -> ""
   | _ -> assert false
 
 let init_values x ti =
@@ -339,13 +343,16 @@ let of_xmodule x ti template opt =
     | loops -> raise (InfiniteLoop(loops)));
   let user_funs = 
      List.map (fun (i,_) -> (i, EIConst i)) x.const @
-     List.map (function | (i, EFun(args, _)) -> (i, EIFun (i, List.length args))
+     List.map (function
+               | (i, InternFun EFun(args, _)) -> (i, EIFun (i, List.length args))
+               | (i, ExternFun (arg_t, _)) -> (i, EIExtern (i, List.length arg_t))
                | _ -> assert false) x.func in
   let unify_nodes = List.sort_uniq compare (List.map snd (Dependency.M.bindings x.unified_group)) in
   let attributes = 
     [[("start", 1)]; [("out", 2); ("out_node", 1); ("in", 1); ("wait", 1)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
+                             | EIExtern(_, n) -> n
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
      List.map (fun i -> (i, 2)) unify_nodes;

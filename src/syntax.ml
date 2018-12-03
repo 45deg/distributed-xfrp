@@ -59,6 +59,7 @@ type definition
   = Const of id_and_type_opt * expr
   | Node of id_and_type_opt * expr option * expr * bool
   | Fun of (id * (Type.t option list * Type.t option)) * expr
+  | Extern of id * (Type.t list * Type.t)
 
 type program = {
   id: moduleid;
@@ -134,5 +135,7 @@ let string_of_definition defs =
       Printf.sprintf "function %s(%s): %s = %s" i (List.map2 (fun i t -> i ^ ":" ^ str_ty t) ai at |> String.concat ",") 
                                                 (str_ty rt) (string_of_expr e)
     | Fun(_,_) -> assert false
-    | Node((i,t), init, e, async) -> (if async then "async " else "") ^ Printf.sprintf "node %s = %s" i (string_of_expr e) in
+    | Node((i,t), init, e, async) -> (if async then "async " else "") ^ Printf.sprintf "node %s = %s" i (string_of_expr e)
+    | Extern(i, (at, rt)) -> Printf.sprintf "extern fun %s(%s): %s" 
+                               i (List.map string_of_type at |> String.concat ",") (string_of_type rt)  in
   String.concat "\n" (List.map str_def defs)

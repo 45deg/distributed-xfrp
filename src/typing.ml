@@ -272,9 +272,14 @@ let type_module program =
   let open Module in
   let env = make_env program.typeinfo in
   let { const = c; func = f; node = n } = program in
+  let rec filter_f  = function 
+    | [] -> []
+    | (id, InternFun e) :: rest -> (id, e) :: filter_f rest
+    | _ :: rest -> filter_f rest
+  in
   let result = env |>
   infer_defs c |>
-  infer_defs f |>
+  infer_defs (filter_f f) |>
   infer_defs (List.map (fun (i,_,e,_) -> (i,e)) n) in
   check_init result n;
   if List.for_all (fun (i, _, _, _) -> is_concrete (Typeinfo.find i result)) n then

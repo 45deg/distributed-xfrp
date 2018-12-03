@@ -34,7 +34,7 @@ let update id host =
 
 %token
   MODULE IN OUT USE CONST NODE INIT FUN IF THEN ELSE
-  LET CASE OF LAST TRUE FALSE UNIFY
+  LET CASE OF LAST TRUE FALSE UNIFY EXTERN
 
 %token
   COMMA LBRACKET RBRACKET LPAREN RPAREN COLON COLON2
@@ -104,6 +104,8 @@ definition:
     { update (fst it) !last_host; Node(it, init, e, match async with | None -> false | _ -> true) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
     { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
+  | EXTERN FUN id = ID LPAREN arg_t = separated_list(COMMA, type_spec) RPAREN COLON ret_t = type_spec
+    { Extern(id, (arg_t, ret_t)) }
 
 expr:
   | constant { EConst($1) }
