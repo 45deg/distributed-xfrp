@@ -1,0 +1,13 @@
+module Async
+in
+  input : Int
+out 
+  pair : (Int, Int)
+use Std
+
+extern fun heavyCalc(Int) : Int
+
+node init[0] count = count@last + input
+async node heavy = heavyCalc(count)
+
+node pair = (count, heavy)
