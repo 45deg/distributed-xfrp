@@ -217,13 +217,14 @@ let out_nodes hosts outputs = String.concat "\n" @@
   List.map (fun (host, ids) -> out_node host ids)) @
   ["out_node(_) -> erlang:error(badarg)."]
 
-let def_node deps hi env (id, init, expr) =
+let def_node deps hi env (id, init, expr, async) =
   let dep = try_find id deps in
   let bind (cs, ls) = "#{" ^ String.concat ", " (
     List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
   let update n = 
+    (if async then indent n "spawn(fun () -> \n" else "") ^
     match (if dep.is_output then "out_node" :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
       | output ->
@@ -232,7 +233,8 @@ let def_node deps hi env (id, init, expr) =
         concat_map ",\n" (indent (n + 1)) (
           List.map (fun i -> send hi i ("{" ^ id ^ ", Curr, V}")) output
         ) ^ "\n" ^
-        indent n "end, [Version|Deferred]),\n"
+        indent n "end, [Version|Deferred])" ^
+        (if async then "end),\n" else ",\n")
   in
   (* main node function *)
   id ^ "(Buffer0, Rest0, Deferred0) ->\n" ^ 
@@ -285,8 +287,8 @@ let init_values x ti =
     | TList t -> EList([])
     | _ -> assert false in
   let node_init = List.fold_left (fun m -> function 
-    | (id, Some(init), _) -> M.add id init m
-    | (id, None, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
+    | (id, Some(init), _, _) -> M.add id init m
+    | (id, None, _, _) -> M.add id (of_type (Typeinfo.find id ti)) m) M.empty x.node in
   List.fold_left (fun m id -> M.add id (of_type (Typeinfo.find id ti)) m) node_init x.source
 
 let lib_funcs = String.concat "\n" [
@@ -347,14 +349,14 @@ let of_xmodule x ti template opt =
                              | _ -> 0 )) user_funs;
      List.map (fun i -> (i, 1)) x.source;
      List.map (fun i -> (i, 2)) unify_nodes;
-     List.map (fun (i, _, _) -> (i, 3)) x.node]
+     List.map (fun (i, _, _, _) -> (i, 3)) x.node]
   in
   let exports = (concat_map "\n" (fun l -> "-export([" ^ 
       (concat_map "," (fun (f,n) -> f ^ "/" ^ string_of_int n) l)
     ^ "]).") attributes) in
   let env = List.fold_left (fun m (i,e) -> M.add i e m) M.empty user_funs in
   let env_with_nodes =
-    List.map (fun (i, _, _) -> i) x.node @ x.source |>
+    List.map (fun (i, _, _, _) -> i) x.node @ x.source |>
     List.fold_left (fun m i -> M.add i (EISigVar i) m) env in
   let inits = (init_values x ti) in
   String.concat "\n\n" (

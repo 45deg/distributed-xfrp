@@ -81,7 +81,7 @@ let get_graph xmodule =
   let unified name = 
       try Module.M.find name xmodule.unified_group with | Not_found -> name
   in
-  let nodes = List.fold_left (fun m (i, _, e) -> M.add i e m) M.empty xmodule.node in
+  let nodes = List.fold_left (fun m (i, _, e, _) -> M.add i e m) M.empty xmodule.node in
   let in_ids = S.of_list (List.map fst (M.bindings nodes) @ xmodule.source) in
   let ins = M.map (extract in_ids) nodes in
   let inv = inv_map ins in

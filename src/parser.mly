@@ -40,7 +40,7 @@ let update id host =
   COMMA LBRACKET RBRACKET LPAREN RPAREN COLON COLON2
   SEMICOLON AT ARROW TILDE PLUS MINUS PERCENT ASTERISK
   SLASH XOR OR2 AND2 OR AND EQUAL2 NEQ LSHIFT LTE LT
-  RSHIFT GTE GT BANG EQUAL
+  RSHIFT GTE GT BANG EQUAL ASYNC
 
 %token <char> CHAR
 %token <string> ID
@@ -98,10 +98,10 @@ in_nodes:
 definition:
   | CONST it = id_and_type_opt EQUAL e = expr
     { Const(it, e) }
-  | host = HOST NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { update (fst it) (Host host); Node(it, init, e) }
-  | NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
-    { update (fst it) !last_host; Node(it, init, e) }
+  | host = HOST async = option(ASYNC) NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
+    { update (fst it) (Host host); Node(it, init, e, match async with | None -> false | _ -> true) }
+  | async = option(ASYNC) NODE init = option(INIT LBRACKET e = expr RBRACKET { e }) it = id_and_type_opt EQUAL e = expr
+    { update (fst it) !last_host; Node(it, init, e, match async with | None -> false | _ -> true) }
   | FUN id = ID LPAREN a = fargs RPAREN t_opt = option(COLON type_spec { $2 }) EQUAL e = expr
     { let (ai, at) = List.split a in Fun((id, (at, t_opt)), EFun(ai, e)) }
 

@@ -26,6 +26,7 @@ let () =
     "True", TRUE;
     "False", FALSE;
     "unify", UNIFY; 
+    "async", ASYNC;
   ]
 
 let next_line lexbuf =

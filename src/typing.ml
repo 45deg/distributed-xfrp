@@ -253,7 +253,7 @@ let make_env default =
   ) default
 
 let check_init env n =
-  List.iter (fun (id, init_opt, _) ->
+  List.iter (fun (id, init_opt, _, _) ->
     match init_opt with 
     | Some (init) -> begin
       let ty = Typeinfo.find id env in
@@ -275,14 +275,14 @@ let type_module program =
   let result = env |>
   infer_defs c |>
   infer_defs f |>
-  infer_defs (List.map (fun (i,_,e) -> (i,e)) n) in
+  infer_defs (List.map (fun (i,_,e,_) -> (i,e)) n) in
   check_init result n;
-  if List.for_all (fun (i, _, _) -> is_concrete (Typeinfo.find i result)) n then
+  if List.for_all (fun (i, _, _, _) -> is_concrete (Typeinfo.find i result)) n then
     (* check all nodes are concrete type. *)
     result
   else 
     raise (TypeError("Generic types remain: " ^ 
-      (n |> List.map (fun (i, _, _) -> (i, Typeinfo.find i result))
+      (n |> List.map (fun (i, _, _, _) -> (i, Typeinfo.find i result))
          |> List.filter (fun (_, t) -> not (is_concrete t))
          |> List.map (fun (i,t) -> "(" ^ i ^ ":" ^ string_of_type t ^ ")")
          |> String.concat ", ")

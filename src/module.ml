@@ -14,7 +14,7 @@ type t = {
   sink: id list;
   const: (id * expr) list;
   func: (id * expr) list;
-  node: (id * expr option * expr) list;
+  node: (id * expr option * expr * bool) list;
   typeinfo: tannot M.t;
   hostinfo: (host * id list) list;
 }
@@ -23,7 +23,7 @@ let collect defs =
   let (a, b, c) = List.fold_left (fun (cs, fs, ns) -> function
     | Const ((i, _), e) -> ((i, e) :: cs, fs, ns)
     | Fun ((i, _), e)  -> (cs, (i, e) :: fs, ns)
-    | Node ((i, _), init, e) -> (cs, fs, (i, init, e) :: ns)
+    | Node ((i, _), init, e, async) -> (cs, fs, (i, init, e, async) :: ns)
   ) ([], [], []) defs in
   (List.rev a, List.rev b, List.rev c)
 
@@ -32,7 +32,7 @@ let make_type program =
   let def_t = List.fold_left (fun m -> function
     | (Const ((i, t), _)) -> M.add i (TAConst t) m
     | (Fun ((i, (ta,tr)), _)) -> M.add i (TAFun (ta, tr)) m
-    | (Node ((i, t), _, _)) -> M.add i (TANode t) m
+    | (Node ((i, t), _, _, _)) -> M.add i (TANode t) m
   ) in_t program.definition in
   let out_t = List.fold_left (fun m (i,t) -> M.add i (TANode (Some t)) m) def_t program.out_node in
   out_t
