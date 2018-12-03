@@ -1,12 +1,12 @@
 heavyCalc(N) -> 
-    timer:sleep(rand:uniform(1500)),
+    timer:sleep(rand:uniform(300)),
     rand:uniform(N).
 
-out(pair, X) ->
-    io:format("~p~n", [X]).
+out(pair, {I,_}) ->
+    io:format("~p ~p~n", [I, erlang:system_time()]).
 
 in(localhost) ->
     input ! 1,
-    timer:sleep(1000),
-    io:format("~n", []),
+    timer:sleep(100),
+    %io:format("~n", []),
     in(localhost).
