@@ -11,11 +11,7 @@ let input_file  = ref None
 let template_file = ref None
 let debug_mode = ref false
 
-let opt = let open Codegen in ref {
-  debug = false;
-  mess = None;
-  drop = None
-}
+let opt = let open Codegen in ref default_config
 
 let mode = ref Erlang
 
@@ -25,7 +21,12 @@ let speclist = [
   ("-dot", Arg.Unit(fun _ -> mode := Dot), "Output the dependency graph.");
   ("-debug", Arg.Unit(fun _ -> opt := { !opt with debug = true }), "Output function trace (experimental)");
   ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
-  ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)")
+  ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)");
+  ("-driver", Arg.String(function 
+    | "simple" -> opt := { !opt with driver = Codegen.Simple }
+    | "actor"  -> opt := { !opt with driver = Codegen.Actor }
+    | _        -> opt := { !opt with driver = Codegen.default_config.driver }
+  ), "[simple|actor] Change I/O behavior. ")
 ]
 
 let load_file f =

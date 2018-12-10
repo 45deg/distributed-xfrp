@@ -9,13 +9,18 @@ exception UnknownId of string
 exception AtLastError of string
 exception InfiniteLoop of string list list
 
+type driver =
+  Simple | Actor
+
 type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
+  driver: driver
 }
 
-let config = ref { debug = false; mess = None; drop = None }
+let default_config = { debug = false; mess = None; drop = None; driver = Simple }
+let config = ref default_config
 
 let try_find id m = begin
   try M.find id m with 
@@ -154,6 +159,10 @@ let main deps xmod inits env =
       ^ "}, #{}, []])),\n"
   in
   List.map (fun (host, ids) ->
+    let self = match !config.driver with
+      | Simple -> ""
+      | Actor  -> ", self()"
+    in
     let hostname = string_of_host host in
     let whosts = (* The hosts to be waited *)
       List.filter (fun (h, _) -> compare h host != 0) xmod.hostinfo |>
@@ -169,7 +178,7 @@ let main deps xmod inits env =
     "start('" ^ hostname ^ "') -> \n" ^
     concat_map "" (fun id -> spawn id) ids ^
     (if List.exists (fun i -> List.mem i xmod.sink) ids then (* contains output node *)
-      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'])),\n" else "") ^
+      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'" ^ self ^ "])),\n" else "") ^
     indent 1 "wait([" ^ (concat_map "," (fun s -> "'" ^ s ^ "'") whosts) ^ "]),\n" ^
     indent 1 "in('" ^ hostname ^ "');"
   ) xmod.hostinfo @ ["start(_) -> erlang:error(badarg)."]
@@ -208,17 +217,23 @@ let unify_node ug id =
 
 let out_node host outputs = String.concat "\n" @@
   let host = string_of_host host in
-  ("out_node('" ^ host ^ "') ->") :: [
+  let (arg, call_out) = match !config.driver with
+    | Simple -> ("'" ^ host ^ "'", fun id -> "out(" ^ id ^ ", Value)")
+    | Actor  -> ("'" ^ host ^ "', Pid", fun id -> "Pid ! {" ^ id ^ ", Value}")
+  in
+  ("out_node(" ^ arg ^ ") ->") :: [
     indent 1 "receive";
-    (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs);
+    (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> " ^ call_out i) outputs);
     indent 1 "end,";
-    indent 1 "out_node('" ^ host ^ "');"
+    indent 1 "out_node(" ^ arg ^ ");"
   ]
 let out_nodes hosts outputs = String.concat "\n" @@
   (List.map (fun (host, ids) -> (host, List.filter (fun s -> List.mem s outputs) ids)) hosts |>
   List.filter (fun (_, ids) -> List.length ids > 0) |>
   List.map (fun (host, ids) -> out_node host ids)) @
-  ["out_node(_) -> erlang:error(badarg)."]
+  [match !config.driver with
+      | Simple -> "out_node(_) -> erlang:error(badarg)."
+      | Actor  -> "out_node(_,_) -> erlang:error(badarg)."]
 
 let def_node deps hi env (id, init, expr, async) =
   let dep = try_find id deps in
@@ -330,7 +345,6 @@ let in_func input hosts =
   in
   (List.map fn hosts) @ ["in(_) -> erlang:error(badarg)."] |> String.concat "\n"
 
-
 let out_func output = String.concat "\n" @@
   List.map (fun id -> "out(" ^ id ^", Value) -> void; % replace here") output @
   ["out(_, _) -> erlang:error(badarg)."]
@@ -349,7 +363,11 @@ let of_xmodule x ti template opt =
                | _ -> assert false) x.func in
   let unify_nodes = List.sort_uniq compare (List.map snd (Dependency.M.bindings x.unified_group)) in
   let attributes = 
-    [[("start", 1)]; [("out", 2); ("out_node", 1); ("in", 1); ("wait", 1)];
+    [[("start", 1)]; 
+      (match !config.driver with
+        | Simple -> [("out", 2); ("out_node", 1)]
+        | Actor  -> [("out_node", 2)])
+      @ [("in", 1); ("wait", 1)];
      List.map (fun (_, e) -> (string_of_eid e,
                 match e with | EIFun(_, n) -> n
                              | EIExtern(_, n) -> n
@@ -376,7 +394,10 @@ let of_xmodule x ti template opt =
     @ main dep x inits env ::
      (match template with
        | Some s -> [s]
-       | None   -> [in_func x.source x.hostinfo; out_func x.sink])
+       | None   -> match !config.driver with
+          | Simple -> [in_func x.source x.hostinfo; out_func x.sink]
+          | Actor  -> [in_func x.source x.hostinfo]
+    )
     (* outfunc *)
     @ (List.map (fun i -> in_node dep x.hostinfo i (Dependency.M.find_opt i x.unified_group)) x.source)
     @ List.map (unify_node x.unified_group) unify_nodes
