@@ -1,6 +1,7 @@
 module Test1  # module name
 in  tmp : Float,      # temperature sensor
-    hmd : Float       # humidity sensor
+    hmd : Float,      # humidity sensor
+    unify(tmp, hmd)
 out fan : Bool        # fan switch
 use Std               # standard library
 

@@ -355,6 +355,7 @@ let of_xmodule x ti template opt =
   (match Dependency.find_loop x.source dep with
     | [] -> ()
     | loops -> raise (InfiniteLoop(loops)));
+  Dependency.check_source_constraint dep;
   let user_funs = 
      List.map (fun (i,_) -> (i, EIConst i)) x.const @
      List.map (function

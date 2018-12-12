@@ -71,6 +71,8 @@ let compile in_c =
     raise (CompileError(Printf.sprintf "Syntax error at Line %d, Char %d." pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)))
   | Typing.TypeError s ->
     raise (CompileError("Type error: " ^ s))
+  | Dependency.InvalidAtLast ss ->
+    raise (CompileError("Invalid usage of @last: \n" ^ String.concat "\n" (List.map (fun s -> "\t" ^ s) ss)  ))
 
 let () =
   Arg.parse speclist (fun s -> input_file := Some(s)) "Usage:";
@@ -90,5 +92,5 @@ let () =
     close_in input
   with
   | CommandError msg ->
-    Printf.eprintf "Command Error: %s" msg;
-  | CompileError msg -> Printf.eprintf "%s" msg;
+    Printf.eprintf "Command Error: %s\n" msg;
+  | CompileError msg -> Printf.eprintf "%s\n" msg;
