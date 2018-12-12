@@ -1,0 +1,14 @@
+module Adder
+in
+  a : Int,
+  b : Int
+out 
+  po : Int
+use Std
+
+node x = a + b
+node y = a@last + b@last
+node z = a@last + b@last + z@last
+node w = a + z@last
+
+node po = 1

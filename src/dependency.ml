@@ -17,7 +17,6 @@ module ES = Set.Make(struct
 module S = Set.Make(String);;
 module M = Map.Make(String);;
 
-
 type dependency = {
   input_current: id list;
   input_last: id list;
@@ -26,6 +25,8 @@ type dependency = {
   output: id list;
   is_output: bool
 }
+
+exception InvalidAtLast of string list
 
 let string_of_graph graph = 
   graph |>
@@ -145,3 +146,36 @@ let find_loop in_nodes dependency =
         (f (n :: trace) (Hashtbl.find_all inv n)) @ (f trace ns)
   in
   List.concat (List.map (fun n -> f [] (Hashtbl.find_all inv n)) in_nodes)
+
+let check_source_constraint graph = 
+  let get_invalids dep = List.fold_left (fun acc (root_id, _, lasts) ->
+    List.fold_left (fun m last_id -> 
+      M.update last_id (function
+        | Some l -> Some (root_id :: l)
+        | None   -> Some [root_id]
+      ) m
+    ) acc lasts
+  ) M.empty dep.root_group
+  |> M.bindings 
+  |> List.filter (fun (_, l) -> List.length l > 1) in
+(*
+  let get_invalids dep = List.map (fun (root_id, _, lasts) -> 
+    let inv_map = List.fold_left (fun m last_id -> 
+      M.update last_id (function
+        | Some l -> Some (root_id :: l)
+        | None   -> Some [root_id]
+      ) m
+    ) M.empty lasts in
+    let invalids = M.filter (fun _ list -> List.length list > 0) inv_map in
+    M.bindings invalids
+  ) dep.root_group |> List.flatten in
+*)
+  let warns = List.fold_left (fun acc (nodeid,dep) ->
+    List.map (fun (last_id, rootids) ->
+      let n = string_of_int (List.length rootids) in
+      "In node " ^ nodeid ^ ", node `" ^ last_id ^ "` has " ^ n ^ " roots: " ^ (String.concat ", " rootids) ^ ". Consider unify them."
+    ) (get_invalids dep) @ acc
+  ) [] (M.bindings graph) in
+  match warns with
+    | [] -> ()
+    | _  -> raise (InvalidAtLast warns)

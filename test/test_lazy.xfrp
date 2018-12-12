@@ -1,7 +1,8 @@
 module Lazy
 in
   a : Int,
-  b : Int
+  b : Int,
+  unify(a,b)
 out 
   o1 : Int,
   o2 : Int

@@ -1,7 +1,8 @@
 module test2 # module name
 in  tmp : Float,     # temperature sensor
     hmd : Float,     # humidity sensor
-    pulse10ms : Bool # 10 ms interval timer
+    pulse10ms : Bool, # 10 ms interval timer
+    unify(tmp, hmd, pulse10ms)
 out fan : Bool,      # fan switch
     led : Bool       # LED
 use Std              # standard library
