@@ -1,0 +1,19 @@
+module Watchdog
+in
+  sensor : (Int, Int),
+  threshold : Int,
+  unify(threshold, sensor)
+out 
+  alarm  : Bool,
+  report : [(Int, Int, Int)]
+use Std
+
+extern fun evaluateThreat(Int) : Int
+
+node value = case sensor of (f, _) -> f;
+node timestamp = case sensor of (_, s) -> s;
+
+async node threatLevel = evaluateThreat(value)
+
+node alarm = threatLevel > threshold
+node init[[]] report = if alarm then (threatLevel,timestamp,value) :: report@last else report@last
