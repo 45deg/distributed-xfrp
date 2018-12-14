@@ -12,8 +12,7 @@ erl_crash.dump
 
 example/board/out.*
 example/board/cecho
-example/board/board.erl
-
-example/watchdog/watchdog.erl
+example/*/*.erl
+!example/*/*_*.erl
 
 erlang/*.erl
