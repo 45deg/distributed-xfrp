@@ -1,0 +1,33 @@
+module Accesslog
+in
+  access : (Int, [Char]),
+  searchText : [Char]
+out 
+  display : [(Int, [Char], [Char])],
+  count   : Int
+use Std
+
+extern fun getLocation([Char]) : [Char]
+
+fun len(l) = case l of [] -> 0; _ :: xs -> 1 + len(xs);
+fun startsWith(a, b) = case (a,b) of
+  ([], []) -> True;
+  ([], _)  -> True;
+  (_, [])  -> False;
+  (x :: xs, y :: ys) -> if x == y then startsWith(xs, ys) else False;
+
+fun search(text, log) = case log of
+  [] -> [];
+  (t, ip, geo) :: rest -> 
+    if (startsWith(text, ip) || startsWith(text, geo)) 
+      then (t, ip, geo) :: search(text, rest)
+      else search(text, rest);
+
+async node geo = case access of (_, ip) -> getLocation(ip);
+
+node log = case access of 
+  (timestamp, ip) -> (timestamp, ip, geo) :: log@last;
+
+node display = search(searchText, log)
+
+node count = len(log)
