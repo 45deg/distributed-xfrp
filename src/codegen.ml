@@ -13,7 +13,7 @@ type code_option = {
   debug: bool;
   mess: int option;
   drop: float option;
-  retry: int option;
+  retry: (int * int) option;
   benchmark: string option;
 }
 
@@ -73,6 +73,14 @@ let send_raw target e =
 let send hi i e =
   let target = get_target hi i in
   send_raw target e
+
+let send_with_retry msg send_func target
+  = match !config.retry with 
+    | None -> send_func msg
+    | Some(_, n) -> 
+        let rid = "spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ target ^ ", {" ^ msg ^ ", self()}) end)" in
+        (benchcode "add_actor") ^
+        (send_func ("{" ^ msg ^ ", " ^ rid ^ "}"))
 
 type latest_enum
   = Prefix of string
@@ -204,26 +212,12 @@ let in_node deps hi id unify_node =
   "Value ->";
   (match unify_node with
     | Some(node) ->
-      let r = ref 0 in
-      begin let m = "{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}" in match !config.retry with 
-        | None -> send hi node m
-        | Some(n) ->
-          let rid = incr r; "R" ^ string_of_int !r in
-          (benchcode "add_actor") ^
-          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi node) ^ ", {" ^ m ^ ", self()}) end), ") ^
-          (send hi node ("{" ^ m ^ ", " ^ rid ^ "}"))
-      end
-    | None -> 
-      let r = ref 0 in
-      concat_map ",\n\t" (fun s -> indent 1 
-        begin let m = "{" ^ id ^ ", Value, {" ^ id ^ ", Version}}" in match !config.retry with 
-        | None -> send hi s m
-        | Some(n) ->
-          let rid = incr r; "R" ^ string_of_int !r in
-          (benchcode "add_actor") ^
-          (rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi s) ^ ", {" ^ m ^ ", self()}) end), ") ^
-          (send hi s ("{" ^ m ^ ", " ^ rid ^ "}"))
-        end
+      let m = "{" ^ id ^ ", [" ^ (concat_map "," (get_target hi) outputs) ^ "], Value}" in 
+        send_with_retry m (send hi node) (get_target hi node)
+    | None ->
+      concat_map ",\n\t" (fun s -> 
+        let m = "{" ^ id ^ ", Value, {" ^ id ^ ", Version}}" in
+          indent 1 (send_with_retry m (send hi s) (get_target hi s))
       ) outputs
   );
   "end,";
@@ -236,21 +230,17 @@ let unify_node ug id =
     "Elements = receive";
       begin match !config.retry with 
         | None -> indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}}"
-        | Some _ -> indent 1 "{{Source, Targets, Value}, R0} -> " ^ (send_raw "R0" "ack") ^ ", Last#{Source => {Targets, Value}}"
+        | Some _ -> 
+          indent 1 "{Source, Targets, Value} -> Last#{Source => {Targets, Value}};\n" ^
+          indent 1 "{{Source, Targets, Value}, R0} -> " ^ (send_raw "R0" "ack") ^ ", Last#{Source => {Targets, Value}}"
       end;
     "end,";
     "case maps:size(Elements) of";
     indent 1 (string_of_int num) ^ " -> ";
     indent 2 "maps:map(fun (Source, {Targets, Value}) -> ";
-    begin let m = "{Source, Value, {" ^ id ^ ", Version}}" in match !config.retry with 
-      | None ->
-        indent 3 "lists:foreach(fun (Target) -> " ^ (send_raw "Target" m) ^ " end, Targets)"
-      | Some n ->
-        indent 3 "lists:foreach(fun (Target) -> " ^
-        (benchcode "add_actor") ^
-        "R = spawn(fun () -> resender(" ^ string_of_int n ^ ", Target, {" ^ m ^ ", self()}) end), " ^
-        (send_raw "Target" ("{" ^ m ^", R}")) ^ " end, Targets)"
-    end;
+    indent 3 "lists:foreach(fun (Target) -> ";
+    indent 4 (send_with_retry ("{Source, Value, {" ^ id ^ ", Version}}") (send_raw "Target") "Target");
+    indent 3 " end, Targets)";
     indent 2 "end, Elements),";
     indent 2 id ^ "(Version + 1, Elements);";
     indent 1 "_ -> " ^ id ^ "(Version, Elements)";
@@ -264,7 +254,9 @@ let out_node host outputs = String.concat "\n" @@
     begin match !config.retry with
       | None -> (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs)
       | Some(_) -> (concat_map ";\n" 
-        (fun i -> indent 2 "{{" ^ i ^ ", Value, Version}, R} -> " ^ (send_raw "R" "ack") ^ ", is_new_lv(Version, Latest) andalso out(" ^ i ^ ", Value), update_lv(Version, Latest)")
+        (fun i -> 
+          indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value);\n" ^
+          indent 2 "{{" ^ i ^ ", Value, Version}, R} -> " ^ (send_raw "R" "ack") ^ ", is_new_lv(Version, Latest) andalso out(" ^ i ^ ", Value), update_lv(Version, Latest)")
       outputs)
     end;
     indent 1 "end,";
@@ -283,7 +275,6 @@ let def_node deps hi env (id, init, expr) =
     List.map (fun id -> id ^ " := " ^ string_of_eid (EISigVar id)) cs @
     List.map (fun id -> "{last, " ^ id ^ "} := " ^ string_of_eid (EILast (EISigVar id))) ls)
   ^ "}" in
-  let ridcnt = ref 0 in
   let update n = 
     match (if dep.is_output then "out_node" :: dep.output else dep.output) with
       | [] -> indent n "% nothing to do\n" (* TODO: Should output some warning *)
@@ -291,12 +282,8 @@ let def_node deps hi env (id, init, expr) =
         indent n "Curr = " ^ erlang_of_expr env expr ^ ",\n" ^
         indent n "lists:foreach(fun (V) -> \n" ^
         concat_map ",\n" (indent (n + 1)) (
-          List.map (fun i -> let m = "{" ^ id ^ ", Curr, V}" in match !config.retry with
-            | None -> send hi i m
-            | Some(n) -> let rid = incr ridcnt; "R" ^ string_of_int !ridcnt in
-              (benchcode "add_actor") ^
-              rid ^ " = spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ (get_target hi i) ^ ", {" ^ m ^ ", self()}) end), " ^
-              send hi i ("{" ^ m ^ ", " ^ rid ^ "}")
+          List.map (fun i -> let m = "{" ^ id ^ ", Curr, V}" in
+            send_with_retry m (send hi i) (get_target hi i)
           ) output
         ) ^ "\n" ^
         indent n "end, [Version|Deferred]),\n"
@@ -330,7 +317,7 @@ let def_node deps hi env (id, init, expr) =
   indent 1 "end, {Buffer0, Rest0, Deferred0" ^ (latest (Postfix "0")) ^ "}, HL),\n" ^
   begin match !config.retry with
     | None -> indent 1 "Received = receive {_,_,{_, _}} = M -> M end,\n"
-    | Some(_) -> indent 1 "Received = receive {{_,_,{_, _}} = M, R} -> " ^ (send_raw "R" "ack") ^ ", M end,\n"
+    | Some(_) -> indent 1 "Received = receive {_,_,{_, _}} = M -> M; {{_,_,{_, _}} = M, R} -> " ^ (send_raw "R" "ack") ^ ", M end,\n"
   end ^
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ " receives (~p)~n\", [Received]),\n" else "") ^
   indent 1 id ^ "(buffer_update" ^

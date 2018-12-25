@@ -28,7 +28,8 @@ let speclist = [
   ("-debug", Arg.Unit(fun _ -> opt := { !opt with debug = true }), "Output function trace (experimental)");
   ("-mess", Arg.Int(fun n -> opt := { !opt with mess = Some(n) }), " [N] Let sending messages delayed randomly up to N ms (experimental)");
   ("-drop", Arg.Float(fun n -> opt := { !opt with drop = Some(n) }), " [P (0~1)] Let messages dropped with the probability of P (experimental)");
-  ("-retry", Arg.Int(fun n -> opt := { !opt with retry = Some(n) }), " [N] Enable Retry: the timeout is N ms (experimental)");
+  ("-retry", Arg.Int(fun n -> opt := { !opt with retry = Some(0, n) }), " [N] Enable Retry: the timeout is N ms (experimental)");
+  ("-distretry", Arg.Int(fun n -> opt := { !opt with retry = Some(1, n) }), " [N] Enable Retry (Distributed Mode): the timeout is N ms (experimental)");
   ("-benchmark", Arg.String(fun s -> opt := { !opt with benchmark = Some(s) }), "[hostname] Benchmark for Actors and Messages")
 ]
 
