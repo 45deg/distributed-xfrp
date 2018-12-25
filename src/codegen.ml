@@ -46,7 +46,7 @@ let string_of_eid ?(raw=true) = function
     (raise (AtLastError("@last operator cannot be applied twice, make another delay node")))
 
 let get_target hi i = match i with
-    | "out_node" -> "out_node"
+    | "out_node" -> "{out_node, node()}"
     | id -> let (host, _) = List.find (fun (_, ids) -> List.mem id ids) hi in
         match host with 
           | Host(h)   -> "{" ^ id ^ ",'" ^ h ^ "'}" 
@@ -62,7 +62,8 @@ let send_raw target e =
     | Some n -> "timer:send_after(rand:uniform(" ^ string_of_int n ^ "), " ^ target ^ ", " ^ e ^ ")") in
   match !config.drop with
     | None -> expr
-    | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") of true -> "
+    | _ when String.get target 0 != '{' -> expr
+    | Some n -> "(case (rand:uniform() > " ^ string_of_float n ^ ") orelse (element(2, "^ target ^") =:= node()) of true -> "
                    ^ expr ^ "; false -> " ^ 
                     (if !config.debug then
                       "io:format(standard_error, \"Dropped ~p~n\", [" ^ e ^ "])"
@@ -79,8 +80,12 @@ let send_with_retry msg send_func target
     | None -> send_func msg
     | Some(_, n) -> 
         let rid = "spawn(fun () -> resender(" ^ string_of_int n ^ ", " ^ target ^ ", {" ^ msg ^ ", self()}) end)" in
+        "case element(2, "^ target ^") =:= node() of " ^
+        "true -> " ^ (send_func msg) ^ ";" ^
+        "false -> " ^
         (benchcode "add_actor") ^
-        (send_func ("{" ^ msg ^ ", " ^ rid ^ "}"))
+        (send_func ("{" ^ msg ^ ", " ^ rid ^ "}")) ^
+        "end"
 
 type latest_enum
   = Prefix of string
