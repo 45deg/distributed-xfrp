@@ -169,7 +169,7 @@ let in_node deps id =
 let out_node () = String.concat "\n" @@
   "out_node(Buffer0, Latest0) ->" :: List.map (indent 1) [
     (if !config.debug then indent 1 "io:format(standard_error, \"out_node(~p,~p)~n\", [Buffer0, Latest0])," else "") ^
-    (* indent 1 "io:format(\"~p|out|~p~n\", [erlang:system_time(), length(Buffer0)]),"; *)
+    (*indent 1 "io:format(\"~p|out|~p~n\", [erlang:system_time(), length(Buffer0)]),";*)
     "receive M -> ";
     "{NBuffer, NLatest} = lists:foldl(fun ( {_, _, {RV,RI}} = H, { Buffer, Latest } ) -> case Latest of";
     indent 1 "#{ RV := {RI, Cnt, Num} } ->";
@@ -204,6 +204,7 @@ let def_node deps env (id, init, expr) =
   (* main node function *)
   id ^ "(Heap0, Last0, Deferred0) ->\n" ^ 
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [Heap0, Last0, Deferred0]),\n" else "") ^
+  (*indent 1 "io:format(\"~p|" ^ id ^ "|~p~n\", [erlang:system_time(), maps:size(Heap0)])," ^ *)
   indent 1 "HL = lists:sort(?SORTHEAP, maps:to_list(Heap0)),\n" ^
   indent 1 "{NHeap, NLast, NDeferred} = lists:foldl(fun (E, {Heap, Last, Deferred}) -> \n" ^
   indent 2 "case E of\n" ^
