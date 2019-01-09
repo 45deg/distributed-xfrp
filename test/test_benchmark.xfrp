@@ -1,4 +1,4 @@
-module Simple
+module Benchmark
 in
   num : Int
 out 
