@@ -74,23 +74,24 @@ let send hi i e =
   let target = get_target hi i in
   send_raw target e
 
+let concat_map s f l = String.concat s (List.map f l)
+let indent n s = String.make n '\t' ^ s
+
 type latest_enum
   = Prefix of string
   | Postfix of string
   | NoFix
   | Update
-  | EmptyMap
+  | InitMap of string list
 let latest attr = match !config.retry with
   | None -> ""
   | Some _ -> match attr with 
     | Prefix s ->  ", " ^ s ^ "Latest"
     | Postfix s ->  ", Latest" ^ s
     | NoFix ->  ", Latest"
-    | Update -> ", update_lv(Version, Latest)"
-    | EmptyMap -> ", #{}"
+    | Update -> ", Latest#{ Vid => Vrcv }"
+    | InitMap ss -> ", #{" ^ concat_map ", " (fun s -> s ^ " => -1") ss ^ "}"
 
-let concat_map s f l = String.concat s (List.map f l)
-let indent n s = String.make n '\t' ^ s
 
 let erlang_of_expr env e = 
   let rec f env = function
@@ -172,7 +173,7 @@ let main deps xmod inits env =
       indent 1 "register(" ^ id ^ ", " ^
       "spawn(?MODULE, " ^ fun_id ^ ", [#{" ^
         concat_map ", " (fun s -> "{" ^ s ^ ", 0} => " ^ init) node.root
-      ^ "}, #{}, []" ^ (latest EmptyMap) ^ "])),\n"
+      ^ "}, #{}, []" ^ (latest (InitMap node.root)) ^ "])),\n"
   in
   List.map (fun (host, ids) ->
     let hostname = string_of_host host in
@@ -190,7 +191,7 @@ let main deps xmod inits env =
     "start('" ^ hostname ^ "') -> \n" ^
     concat_map "" (fun id -> spawn id) ids ^
     (if List.exists (fun i -> List.mem i xmod.sink) ids then (* contains output node *)
-      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "'" ^ latest EmptyMap ^ "])),\n" else "") ^
+      indent 1 "register(out_node,spawn(?MODULE, out_node, ['" ^ hostname ^ "', {[],#{}}])),\n" else "") ^
     indent 1 "wait([" ^ (concat_map "," (fun s -> "'" ^ s ^ "'") whosts) ^ "]),\n" ^
     indent 1 "in('" ^ hostname ^ "');"
   ) xmod.hostinfo @ ["start(_) -> erlang:error(badarg)."]
@@ -257,24 +258,27 @@ let unify_node ug id =
     "end."
   ]
 
-let out_node host outputs = String.concat "\n" @@
+let out_node host _ = String.concat "\n" @@
   let host = string_of_host host in
-  ("out_node('" ^ host ^ "'" ^ (latest NoFix) ^ ") ->") :: [
-    indent 1 "NLatest = receive";
-    begin match !config.retry with
-      | None -> (concat_map ";\n" (fun i -> indent 2 "{" ^ i ^ ", Value, _} -> out(" ^ i ^ ", Value)") outputs)
-      | Some(_) -> (concat_map ";\n" 
-        (fun i -> indent 2 "{{" ^ i ^ ", Value, Version}, R} -> " ^ (send_raw "R" "ack") ^ ", is_new_lv(Version, Latest) andalso out(" ^ i ^ ", Value), update_lv(Version, Latest)")
-      outputs)
-    end;
-    indent 1 "end,";
-    indent 1 "out_node('" ^ host ^ "'" ^ (latest (Prefix "N")) ^ ");"
+  ("out_node('" ^ host ^ "', {Buffer0, Latest0}) ->") :: [
+    indent 1 "Buffer = receive";
+    indent 2 "{{Id, Value, {VId, VNum}}, R} -> " ^ (send_raw "R" "ack") ^ ", " ^
+             "case maps:get({Id, VId}, Latest0, -1) of V when VNum =< V -> Buffer0; _ -> [{{VId, VNum}, {Id, Value}}|Buffer0] end;";
+    indent 2 "{Id, Value, {VId, VNum}} -> [{{VId, VNum}, {Id, Value}}|Buffer0] end,";
+    indent 1 "{NBuffer, NLatest} = lists:foldl(fun ({{VId, VNum}, {Id, Value}} = M, {B, L}) ->";
+    indent 2 "case maps:get({Id, VId}, L, -1) of ";
+    indent 3 "Vl when Vl + 1 == VNum -> out(Id, Value), {B, L#{ {Id, VId} => VNum }};";
+    indent 3 "_ -> {[M|B], L}";
+    indent 2 "end end, {[], Latest0}, lists:sort(?SORTBuffer, Buffer)),";
+    (* {Id, Value, {VId, VNum}} *)
+    indent 1 "out_node('" ^ host ^ "', {NBuffer, NLatest});"
   ]
+
 let out_nodes hosts outputs = String.concat "\n" @@
   (List.map (fun (host, ids) -> (host, List.filter (fun s -> List.mem s outputs) ids)) hosts |>
   List.filter (fun (_, ids) -> List.length ids > 0) |>
   List.map (fun (host, ids) -> out_node host ids)) @
-  ["out_node(_" ^ (latest NoFix) ^ ") -> erlang:error(badarg)."]
+  ["out_node(_,_) -> erlang:error(badarg)."]
 
 
 let def_node deps hi env (id, init, expr) =
@@ -306,13 +310,15 @@ let def_node deps hi env (id, init, expr) =
   (if !config.debug then indent 1 "io:format(standard_error, \"" ^ id ^ "(~p,~p,~p)~n\", [{Buffer0" ^ latest (Postfix "0") ^ "}, Rest0, Deferred0]),\n" else "") ^
   indent 1 "HL = lists:sort(?SORTBuffer, maps:to_list(Buffer0)),\n" ^
   indent 1 "{NBuffer, NRest, NDeferred" ^ latest (Prefix "N") ^ "} = lists:foldl(fun (E, {Buffer, Rest, Deferred" ^ latest NoFix ^ "}) -> \n" ^
-  indent 2 "case E of\n" ^
+  indent 2 "case {E" ^ latest NoFix ^ "} of\n" ^
   concat_map "" (fun (root, currents, lasts) ->
     let other_vars =
       let sub l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1 in
       (sub dep.input_current currents, sub dep.input_last lasts)
     in
-    indent 3 "{ {" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map} ->\n" ^
+    indent 3 (match !config.retry with
+    | None -> "{{{" ^ root ^ ", _} = Version, " ^ bind (currents, lasts) ^ " = Map}} ->\n"
+    | Some _ -> "{{{" ^ root ^ " = Vid, Vrcv} = Version, " ^ bind (currents, lasts) ^ " = Map}, #{ " ^ root ^ " := Vlst }} when Vrcv == Vlst + 1 ->\n") ^
     match other_vars with
     | ([],[]) -> 
       update 4 ^
@@ -379,7 +385,7 @@ let lib_funcs () = String.concat "\n" [
   indent 1 "end.";
   "buffer_update_l(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer, Latest) ->";
   indent 1 "Buf = buffer_update(Current, Rest, {Id, RValue, {RVId, RVersion}}, Buffer),";
-  indent 1 "maps:filter(fun({I,Version},_) -> Version >= element(1,maps:get(I,Latest,{0,0})) end, Buf).";
+  indent 1 "maps:filter(fun({I,Version},_) -> Version > maps:get(I,Latest,-1) end, Buf).";
   (* wait *)
   "wait(Hosts) -> ";
   indent 1 "case lists:all(fun (N) -> net_kernel:connect_node(N) end, Hosts) of";
@@ -389,18 +395,6 @@ let lib_funcs () = String.concat "\n" [
   "resender(T, Target, Msg) ->";
   indent 1 "receive ack -> " ^ (benchcode "del_actor") ^ "ok";
   indent 1 "after T -> " ^ send_raw "Target" "Msg" ^ ", resender(T, Target, Msg) end.";
-  "update_lvpair(Version, ESet) ->";
-  indent 1 "case sets:is_element(Version + 1, ESet) of";
-  indent 2 "true  -> update_lvpair(Version + 1, sets:del_element(Version + 1, ESet));";
-  indent 2 "false -> {Version, ESet}";
-  indent 1 "end.";
-  "update_lv({Id, Version}, M) ->";
-  indent 1 "{Num, ESet} = maps:get(Id, M, {0, sets:new()}),";
-  indent 1 "maps:put(Id, case Version - 1 of";
-  indent 2 "Num -> update_lvpair(Version, ESet);";
-  indent 2 "_ -> {Num, sets:add_element(Version, ESet)}";
-  indent 1 "end, M).";
-  "is_new_lv({Id, Version}, M) -> (not maps:is_key(Id, M)) orelse element(1,maps:get(Id, M)) < Version."
   ]
 
 let in_func input hosts = 
